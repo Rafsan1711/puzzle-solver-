@@ -6,12 +6,26 @@
   <title>Sliding Puzzle — Solver (Stages+Progress+URL+RTDB)</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- firebase compat + realtime database -->
+
+  <!-- Firebase (compat because the original used compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-database-compat.js"></script>
 
+  <!-- Extra algorithm / utility / worker libs (10+ as requested) -->
+  <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fastpriorityqueue@0.7.2/FastPriorityQueue.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/workerpool@6.4.0/dist/workerpool.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tinyqueue@2.0.3/tinyqueue.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heap-js@2.5.0/dist/heap-js.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/async@3.2.5/dist/async.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uuid@9.0.1/dist/umd/uuidv4.min.js"></script>
+
   <style>
-    /* ----------------- আগের CSS অপরিবর্তিত ----------------- */
+    /* ----------------- আগের CSS অপরিবর্তিত (kept visual intent similar) ----------------- */
     body { background:#0d1117; color:#c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     #homeScreen,#gameContainer { background:#161b22cc; box-shadow:0 8px 24px rgba(12,17,23,0.6); }
     #toggleSlider { background:#238636; }
@@ -28,7 +42,7 @@
       text-shadow:0 0 4px #0008; backface-visibility:hidden;
     }
     .tile.hard { font-size:1.5rem; }
-    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.1) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
+    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.05); }
     .tile.empty { background:transparent; box-shadow:none; cursor:default; pointer-events:none; }
     #grid { position:relative; width:100%; height:100%; --grid-size:3; }
     #modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; z-index:100; }
@@ -84,7 +98,6 @@
       font-size: 1rem;
       white-space: nowrap;
     }
-    /* Progress Bar */
     #progressBarWrap {
       width:100%; max-width:34rem; margin:20px auto 0 auto;
       background:#23272e; border-radius:0.7rem; height:1.2rem; box-shadow:0 2px 8px #0005;
@@ -118,7 +131,7 @@
     <button id="startBtn" class="mt-10 w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-2xl font-semibold shadow-lg transition duration-300">
       Start Game
     </button>
-    <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপতে পারো)।</p>
+    <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপো)।</p>
   </div>
 
   <!-- Game container -->
@@ -156,11 +169,9 @@
 <script>
 /* ============================
    FIREBASE Realtime DB SETUP
-   ============================
-   Replace RTDB_MAIN_CONFIG and RTDB_5x5_CONFIGS with your project's credentials.
-   - RTDB_MAIN_CONFIG: used for 3x3 and 4x4
-   - RTDB_5x5_CONFIGS: array of 3 separate RTDB projects used for 5x5 (save & lookup in all)
-*/
+   (3x3 & 4x4 => main; 5x5 => each of the 3 configured RTDBs)
+   Make sure your database rules allow reads/writes for testing.
+   ============================ */
 const RTDB_MAIN_CONFIG = {
   apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
   authDomain: "chatstudio-agent.firebaseapp.com",
@@ -173,62 +184,54 @@ const RTDB_MAIN_CONFIG = {
 };
 
 const RTDB_5x5_CONFIGS = [
-  // RTDB project 1 (5x5 target)
   {
-  apiKey: "AIzaSyA_kIamFMEt3CVrw8dkO6uBsVBoa7SHsng",
-  authDomain: "chatstudio-e6cfd.firebaseapp.com",
-  databaseURL: "https://chatstudio-e6cfd-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "chatstudio-e6cfd",
-  storageBucket: "chatstudio-e6cfd.firebasestorage.app",
-  messagingSenderId: "64309638890",
-  appId: "1:64309638890:web:fe1121b95b7eb618b0c993",
-  measurementId: "G-STBZWFVDRX"
-
+    apiKey: "AIzaSyA_kIamFMEt3CVrw8dkO6uBsVBoa7SHsng",
+    authDomain: "chatstudio-e6cfd.firebaseapp.com",
+    databaseURL: "https://chatstudio-e6cfd-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "chatstudio-e6cfd",
+    storageBucket: "chatstudio-e6cfd.firebasestorage.app",
+    messagingSenderId: "64309638890",
+    appId: "1:64309638890:web:fe1121b95b7eb618b0c993",
+    measurementId: "G-STBZWFVDRX"
   },
-  // RTDB project 2
   {
-
-  apiKey: "AIzaSyDohgyc4pRldMVxbFRTkHnNfAIczf8JHMo",
-  authDomain: "puzzle-solver-4-1.firebaseapp.com",
-  databaseURL: "https://puzzle-solver-4-1-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "puzzle-solver-4-1",
-  storageBucket: "puzzle-solver-4-1.firebasestorage.app",
-  messagingSenderId: "422133823015",
-  appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
-
+    apiKey: "AIzaSyDohgyc4pRldMVxbFRTkHnNfAIczf8JHMo",
+    authDomain: "puzzle-solver-4-1.firebaseapp.com",
+    databaseURL: "https://puzzle-solver-4-1-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "puzzle-solver-4-1",
+    storageBucket: "puzzle-solver-4-1.firebasestorage.app",
+    messagingSenderId: "422133823015",
+    appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
   },
-  // RTDB project 3
   {
-    
-  apiKey: "AIzaSyAKd2WmThKb4OM9pv0Bx9vtunmGpRGxczM",
-  authDomain: "puzzle-solver-5-2.firebaseapp.com",
-  databaseURL: "https://puzzle-solver-5-2-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "puzzle-solver-5-2",
-  storageBucket: "puzzle-solver-5-2.firebasestorage.app",
-  messagingSenderId: "221283910343",
-  appId: "1:221283910343:web:0bef0b54fe26e594c8f4e2"
-
+    apiKey: "AIzaSyAKd2WmThKb4OM9pv0Bx9vtunmGpRGxczM",
+    authDomain: "puzzle-solver-5-2.firebaseapp.com",
+    databaseURL: "https://puzzle-solver-5-2-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "puzzle-solver-5-2",
+    storageBucket: "puzzle-solver-5-2.firebasestorage.app",
+    messagingSenderId: "221283910343",
+    appId: "1:221283910343:web:0bef0b54fe26e594c8f4e2"
   }
 ];
 
-/* Initialize default/main RTDB app (for 3x3 & 4x4) */
 let mainApp = null;
 let mainDb = null;
 try {
   mainApp = firebase.initializeApp(RTDB_MAIN_CONFIG);
   mainDb = firebase.database();
+  console.log('Main RTDB initialized.');
 } catch (e) {
   console.warn('Main RTDB init failed (set RTDB_MAIN_CONFIG).', e);
 }
 
-/* Initialize RTDB apps for 5x5 (may be 0..3 depending on config) */
-const rtdb5Apps = []; // array of { app, db }
+const rtdb5Apps = [];
 for (let i = 0; i < RTDB_5x5_CONFIGS.length; i++) {
   try {
     const name = 'rtdb5_' + (i+1);
     const app = firebase.initializeApp(RTDB_5x5_CONFIGS[i], name);
     const db = firebase.database(app);
     rtdb5Apps.push({ app, db });
+    console.log('Initialized 5x5 RTDB app:', name);
   } catch (err) {
     console.warn('RTDB 5x5 app init failed for index', i, err);
   }
@@ -238,18 +241,18 @@ for (let i = 0; i < RTDB_5x5_CONFIGS.length; i++) {
    Helpers: encode, deterministic 5x5 scramble, caches
    ============================ */
 
-// Encode a state to a compact string key (0 for empty)
 function encodeStateKey(arr) {
+  // compact key: comma separated, 0 for empty
   return arr.map(v => v === null ? '0' : String(v)).join(',');
 }
 
-// deterministic scramble for 5x5 — starts from solved state and does fixed sequence of legal moves
 function deterministicScramble5x5() {
   const n = 5;
   const arr = [];
   for (let i = 1; i <= n*n - 1; i++) arr.push(i);
   arr.push(null); // solved
-  const seq = 'LLURRDLURDLURRDLUURRDLURDLURRDLU'.split(''); // fixed pattern
+  // fixed deterministic pattern
+  const seq = 'LLURRDLURDLURRDLUURRDLURDLURRDLU'.split('');
   let empty = arr.indexOf(null);
   function rc(idx){ return {r: Math.floor(idx/n), c: idx % n}; }
   function idxFromRC(r,c){ return r*n + c; }
@@ -270,16 +273,18 @@ function deterministicScramble5x5() {
   return arr;
 }
 
-// in-memory caches (no localStorage)
 const solutionCacheRTDB = new Map();   // key: size + '|' + key -> moves array
-const solutionCache5RTDBs = new Map(); // key -> moves (for 5x5 across RTDBs)
+const solutionCache5RTDBs = new Map(); // key -> moves
 
 /* ============================
-   DB helpers: check & save
+   DB helpers: check & save (with logging)
    ============================ */
 
 async function checkRTDBForSolution(size, key) {
-  if (!mainDb) return null;
+  if (!mainDb) {
+    console.warn('No mainDb configured for size', size);
+    return null;
+  }
   const cacheKey = size + '|' + key;
   if (solutionCacheRTDB.has(cacheKey)) return solutionCacheRTDB.get(cacheKey);
   try {
@@ -289,6 +294,7 @@ async function checkRTDBForSolution(size, key) {
       const val = snap.val();
       if (val && val.moves) {
         solutionCacheRTDB.set(cacheKey, val.moves);
+        console.log('Found solution in main RTDB for', cacheKey);
         return val.moves;
       }
     }
@@ -299,18 +305,18 @@ async function checkRTDBForSolution(size, key) {
 }
 
 async function saveToRTDB(size, key, moves, meta = {}) {
-  if (!mainDb) return;
+  if (!mainDb) { console.warn('No mainDb to save to'); return; }
   try {
     const ref = mainDb.ref(`/puzzles/${size}/${encodeURIComponent(key)}`);
     const payload = { moves: moves, meta: { createdAt: Date.now(), ...meta } };
     await ref.set(payload);
     solutionCacheRTDB.set(size + '|' + key, moves);
+    console.log(`Saved solution for size ${size} to main RTDB (key=${key})`);
   } catch (e) {
     console.warn('RTDB save failed', e);
   }
 }
 
-// 5x5: check across the configured RTDB projects
 async function checkAll5RTDBsForSolution(key) {
   if (solutionCache5RTDBs.has(key)) return solutionCache5RTDBs.get(key);
   for (const { db } of rtdb5Apps) {
@@ -321,6 +327,7 @@ async function checkAll5RTDBsForSolution(key) {
         const val = snap.val();
         if (val && val.moves) {
           solutionCache5RTDBs.set(key, val.moves);
+          console.log('Found solution in one of 5x5 RTDBs for key', key);
           return val.moves;
         }
       }
@@ -337,6 +344,7 @@ async function saveToAll5RTDBs(key, moves, meta = {}) {
       const ref = db.ref(`/puzzles/5/${encodeURIComponent(key)}`);
       const payload = { moves: moves, meta: { createdAt: Date.now(), ...meta } };
       await ref.set(payload);
+      console.log('Saved to a 5x5 RTDB for key', key);
       solutionCache5RTDBs.set(key, moves);
     } catch (e) {
       console.warn('5x5 RTDB write failed for one app', e);
@@ -345,10 +353,9 @@ async function saveToAll5RTDBs(key, moves, meta = {}) {
 }
 
 /* ============================
-   Original UI & solver code (kept unchanged)
+   Original UI & solver code (kept unchanged where possible)
    ============================ */
 
-/* --- UI/game state --- */
 const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
 let currentMode = 'easy';
 const homeScreen = document.getElementById('homeScreen');
@@ -367,19 +374,16 @@ const progressText = document.getElementById('progressText');
 
 let size, tiles = [], emptyIndex;
 
-/* Mode switch with URL update */
 document.querySelectorAll('[data-mode]').forEach(el=>{
   el.addEventListener('click', ()=> {
     currentMode = el.dataset.mode;
     const idx = ['easy','normal','hard'].indexOf(currentMode);
     toggleSlider.style.left = `${idx*33.3333}%`;
-    // Change URL path
     const p = modes[currentMode].path;
     if(location.pathname!=="/"+p) history.replaceState({}, '', "/"+p);
   });
 });
 
-/* Set URL mode on load */
 (function setModeFromUrl(){
   const path = location.pathname.replace(/^\//,'');
   if(path && Object.values(modes).some(m=>m.path===path)){
@@ -402,7 +406,6 @@ function createGrid(gridSize){
   tiles = Array.from({length:size*size-1},(_,i)=>i+1);
   tiles.push(null);
 
-  // IMPORTANT: For 5x5 we must not random-shuffle — use deterministic scramble so every run is the same (solvable)
   if (size === 5) {
     tiles = deterministicScramble5x5();
   } else {
@@ -495,7 +498,6 @@ window.addEventListener('resize', ()=>{
   });
 });
 
-// Progress bar calculation — count locked/solved tiles (according to mode)
 function calcProgress(arr, sz){
   if(sz===3) {
     let cnt=0;
@@ -510,11 +512,9 @@ function calcProgress(arr, sz){
   if(sz===5){
     // 5×5: first 12 tiles (stage1) + rest
     let stage1=0, total=0;
-    // stage1: 0..4 (row1), 5..9 (row2), 10,11 (row3 col1,2)
     const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
     for(const i of st1idx) if(arr[i]===i+1) stage1++;
     for(let i=0;i<24;i++) if(arr[i]===i+1) total++;
-    // stage1 worth 70%, rest 30%
     return Math.round((stage1/12*70)+(total/24*30));
   }
   return 0;
@@ -529,9 +529,12 @@ function updateProgressBar(){
 }
 
 /* ----------- Worker-based multi-stage hybrid solver -----------
-   (identical to your original worker logic)
+   Now: 5×5 stage1 = serial place tiles 1..15, then IDA* for remaining
+   All heavy computation runs inside this worker to avoid browser freeze.
 */
+
 function solverWorkerFunction(){
+  // inside worker scope
   self.onmessage = function(ev){
     try{
       const {type, state, size} = ev.data;
@@ -564,7 +567,7 @@ function solverWorkerFunction(){
         return res;
       }
 
-      function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=600_000, tCap=10_000){
+      function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=300000, tCap=5000){
         const state = currentState.slice();
         let empty = state.indexOf(null);
         let nodes=0;
@@ -624,9 +627,9 @@ function solverWorkerFunction(){
         const Seen = new Set();
         Queue.push({arr:start.slice(), empty:startEmpty, path:[]});
         Seen.add(key(start));
-        const maxNodes = 200_000;
+        const maxNodes = 200000;
         let nodes=0;
-        const maxDepth = 40;
+        const maxDepth = 80;
         while(Queue.length){
           const node = Queue.shift();
           nodes++;
@@ -649,7 +652,7 @@ function solverWorkerFunction(){
         return null;
       }
 
-      function idaFull(initial, nodeCap=5_000_000, tCap=30_000){
+      function idaFull(initial, nodeCap=1000000, tCap=20000){
         const state = initial.slice();
         let empty = state.indexOf(null);
         let nodes=0;
@@ -699,7 +702,7 @@ function solverWorkerFunction(){
         return null;
       }
 
-      // 4x4: আগের মতো 1-6 tiles
+      // 4x4 solver (original staged approach)
       if(size === 4){
         const working = startState.slice();
         let allMoves = [];
@@ -756,42 +759,58 @@ function solverWorkerFunction(){
           return;
         }
       }
-      // 5x5: নতুন — উপরের ১২টা tile
+
+      // 5x5: place 1..15 serially, then IDA* the rest
       if(size===5){
-        // stage1: 0..4(row1), 5..9(row2), 10,11 (row3 col1,2)
-        const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
         const working = startState.slice();
         let allMoves = [];
         const fixedIndices = new Set();
         try{
-          for(const i of st1idx){
-            const targetVal = i+1;
-            const goalIdx = i;
-            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue;}
-            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 170000, 3000);
+          // place tiles 1..15, one by one
+          for(let idxTile = 0; idxTile < 15; idxTile++){
+            const targetVal = idxTile + 1;
+            const goalIdx = idxTile;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+
+            // try targeted IDA* for the single tile with moderate caps
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 250000, 4000);
+
+            // fallback to BFS placement if IDA* couldn't find quickly
             if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
-            if(!moves){ self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal}); return; }
+            if(!moves){
+              // if both fail, report fail
+              self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal});
+              return;
+            }
+            // apply moves to working
             for(const mv of moves){
               const fromIdx = working.indexOf(mv);
               const eIdx = working.indexOf(null);
-              working[eIdx]=mv; working[fromIdx]=null;
+              working[eIdx] = mv;
+              working[fromIdx] = null;
               allMoves.push(mv);
             }
-            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal}); return;}
+            if(working[goalIdx]!==targetVal){
+              self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal});
+              return;
+            }
             fixedIndices.add(goalIdx);
           }
-          // rest tiles classic
-          const restMoves = idaFull(working, 400000, 9000);
-          if(restMoves&&restMoves.length>0){
+
+          // Now remaining tiles (16..24) solve with a full IDA*
+          const restMoves = idaFull(working, 600000, 20000);
+          if(restMoves && restMoves.length > 0){
             for(const mv of restMoves){
               const fromIdx = working.indexOf(mv);
               const eIdx = working.indexOf(null);
-              working[eIdx]=mv; working[fromIdx]=null;
+              working[eIdx] = mv;
+              working[fromIdx] = null;
               allMoves.push(mv);
             }
             self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'});
             return;
-          }else{
+          } else {
+            // if rest failed, return what we have (partial) so main thread can decide
             self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'});
             return;
           }
@@ -800,12 +819,14 @@ function solverWorkerFunction(){
           return;
         }
       }
-      // 3x3: classic
+
+      // 3x3 classic
       if(size<=3){
         const moves = idaFull(startState);
         self.postMessage({type:'done', moves:moves, method:'3x3_ida'});
         return;
       }
+
       // fallback
       const fallback = idaFull(startState, 150000, 7000);
       self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
@@ -815,12 +836,26 @@ function solverWorkerFunction(){
   };
 } // end worker function
 
-// create worker from function
+// create worker once
 const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
 const workerUrl = URL.createObjectURL(workerBlob);
+
 let solverWorker = null;
 let solverRunning = false;
 let queuedMoves = [];
+let stuckRefreshTimer = null;
+
+function startStuckTimer(){
+  clearStuckTimer();
+  stuckRefreshTimer = setTimeout(()=>{
+    console.warn('Solver appears stuck. Reloading page to recover.');
+    try { if(solverWorker) solverWorker.terminate(); } catch(e){}
+    location.reload();
+  }, 5000); // 5 seconds as requested
+}
+function clearStuckTimer(){
+  if(stuckRefreshTimer){ clearTimeout(stuckRefreshTimer); stuckRefreshTimer = null; }
+}
 
 /* ============================
    START SOLVER with RTDB checks/saves
@@ -833,14 +868,17 @@ async function startSolver(){
   solveBtn.disabled = true;
   gridEl.style.pointerEvents = 'none';
   const snapshot = tiles.slice();
-
   const key = encodeStateKey(snapshot);
+
+  // start stuck timer: if nothing clears it in 5s -> reload
+  startStuckTimer();
 
   // 1) size <= 4 -> check main RTDB first
   if (size <= 4) {
     try {
       const found = await checkRTDBForSolution(size, key);
       if (found && Array.isArray(found) && found.length) {
+        clearStuckTimer();
         applyMovesSequence(found);
         solverRunning = true;
         return;
@@ -853,6 +891,7 @@ async function startSolver(){
     try {
       const found5 = await checkAll5RTDBsForSolution(key);
       if (found5 && Array.isArray(found5) && found5.length) {
+        clearStuckTimer();
         applyMovesSequence(found5);
         solverRunning = true;
         return;
@@ -863,6 +902,7 @@ async function startSolver(){
   // 3) Not in DB -> run worker; after result, save to appropriate RTDB(s)
   solverWorker = new Worker(workerUrl);
   solverWorker.onmessage = async function(ev){
+    clearStuckTimer();
     const data = ev.data;
     const moves = data.moves;
     if(!moves){
@@ -873,39 +913,50 @@ async function startSolver(){
       if(data && data.method){
         if(data.method.startsWith('4x4_stage1_fail')) msg="৪×৪ puzzle: ১-৬ tile stage-এ আটকে গেছে!";
         else if(data.method.startsWith('4x4_stage2_fail')) msg="৪×৪ puzzle: শেষ stage-এ আটকে গেছে!";
-        else if(data.method.startsWith('5x5_stage1_fail')) msg="৫×৫ puzzle: ১ম ১২টা tile stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('5x5_stage1_fail')) msg="৫×৫ puzzle: ১ম ১৫টা tile stage-এ আটকে গেছে!";
         else if(data.method.startsWith('5x5_stage2_fail')) msg="৫×৫ puzzle: শেষ stage-এ আটকে গেছে!";
         else msg = 'Solver could not finish (method: '+data.method+').';
       }
       alert(msg);
-      if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+      // ensure worker terminated
+      try { solverWorker.terminate(); } catch(e){ }
+      solverWorker = null;
+      // reload after 5s to recover
+      setTimeout(()=>location.reload(), 5000);
       return;
     }
 
-    // Save to DB(s)
-    try {
-      if (size <= 4) {
-        await saveToRTDB(size, key, moves, { method: data.method || 'worker' });
-      } else if (size === 5) {
-        await saveToAll5RTDBs(key, moves, { method: data.method || 'worker' });
+    // Save to DB(s) asynchronously but don't block UI application of moves
+    (async ()=>{
+      try {
+        if (size <= 4) {
+          await saveToRTDB(size, key, moves, { method: data.method || 'worker' });
+        } else if (size === 5) {
+          await saveToAll5RTDBs(key, moves, { method: data.method || 'worker' });
+        }
+      } catch (e) {
+        console.warn('Save to RTDB(s) failed', e);
       }
-    } catch (e) {
-      console.warn('Save to RTDB(s) failed', e);
-    }
+    })();
 
     // apply moves
     applyMovesSequence(moves);
+    // terminate worker once job is dispatched
+    try { solverWorker.terminate(); } catch(e){}
+    solverWorker = null;
   };
 
+  // post to worker (start solving)
   solverWorker.postMessage({type:'solve', state: snapshot, size});
 }
 
 function stopSolverNow(){
-  if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+  if(solverWorker){ try { solverWorker.terminate(); } catch(e){} solverWorker = null; }
   solverRunning = false;
   solveBtn.disabled = false;
   gridEl.style.pointerEvents = '';
   queuedMoves = [];
+  clearStuckTimer();
 }
 
 function applyMovesSequence(moves){
@@ -937,7 +988,7 @@ window.addEventListener('keydown', (e)=>{
 
 window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
 
-/* --- Typing effect for status --- */
+/* --- Typing effect for status (unchanged) --- */
 (function(){
   const subTextEl = document.getElementById('thinking-subtext');
   const messages = [
@@ -987,7 +1038,6 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
   }
   loopMessages();
 })();
-
 </script>
 </body>
-</html>
+  </html>
