@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sliding Puzzle — Solver (Stages+Progress+URL+RTDB)</title>
+  <title>Sliding Puzzle — Solver (Extended: many libs & algorithms + RTDB PDB)</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -23,6 +23,11 @@
   <script src="https://cdn.jsdelivr.net/npm/async@3.2.5/dist/async.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/uuid@9.0.1/dist/umd/uuidv4.min.js"></script>
+  <!-- additional popular libs that might be useful -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.8.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pathfinding@0.4.18/PathFinding.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ramda@0.28.0/dist/ramda.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/seedrandom@3.0.5/seedrandom.min.js"></script>
 
   <style>
     /* ----------------- আগের CSS অপরিবর্তিত (kept visual intent similar) ----------------- */
@@ -520,44 +525,118 @@ function updateProgressBar(){
 }
 
 /* ----------- Worker-based multi-stage hybrid solver -----------
-   Now: 5×5 stage1 = serial place tiles 1..15, then IDA* for the rest
+   Now: extended to include many algorithms: A*, bidirectional, IDA*,
+   Genetic Algorithm, Monte Carlo Tree Search, Greedy Best-First,
+   Simulated Annealing, Beam Search, Hill Climbing, BFS, DFS,
+   and Pattern-Database heuristic integration via RTDB lookups.
    All heavy computation runs inside this worker to avoid browser freeze.
 */
 
 function solverWorkerFunction(){
   // inside worker scope
+  // we'll define many algorithms and heuristics here
   self.onmessage = function(ev){
     try{
-      const {type, state, size} = ev.data;
+      const {type, state, size, options} = ev.data;
       if(type !== 'solve') return;
       const startState = state.slice();
 
-      function idxToRC(i){ return {r: Math.floor(i/size), c: i%size}; }
-      const goalPos = {}; for(let v=1; v<=size*size-1; v++) goalPos[v] = idxToRC(v-1);
+      // utility
+      function idxToRC(i, n){ return {r: Math.floor(i/n), c: i % n}; }
+      function rcToIdx(r,c,n){ return r*n + c; }
 
+      const nsize = size;
+      const goalPos = {};
+      for(let v=1; v<=nsize*nsize-1; v++) goalPos[v] = idxToRC(v-1, nsize);
+
+      // Basic heuristics
       function manhattanUnfixed(arr, fixedSet){
         let s = 0;
         for(let i=0;i<arr.length;i++){
           const v = arr[i]; if(v==null) continue;
           const gi = v-1; if(fixedSet && fixedSet.has(gi)) continue;
-          const cur = idxToRC(i), g = goalPos[v];
+          const cur = idxToRC(i, nsize), g = goalPos[v];
           if(!g) continue;
           s += Math.abs(cur.r - g.r) + Math.abs(cur.c - g.c);
         }
         return s;
       }
 
+      function linearConflict(arr){
+        // approximate linear conflict heuristic for rows/cols
+        let lc = 0;
+        const n = nsize;
+        for(let r=0;r<n;r++){
+          // check row
+          const row = [];
+          for(let c=0;c<n;c++) row.push(arr[rcToIdx(r,c,n)]);
+          // for each pair in row, if both belong to this row and are reversed, add 2
+          for(let i=0;i<row.length;i++){
+            for(let j=i+1;j<row.length;j++){
+              const a=row[i], b=row[j];
+              if(!a||!b) continue;
+              const ga = goalPos[a], gb = goalPos[b];
+              if(ga.r===r && gb.r===r && ga.c > gb.c) lc+=2;
+            }
+          }
+        }
+        for(let c=0;c<n;c++){
+          const col=[];
+          for(let r=0;r<n;r++) col.push(arr[rcToIdx(r,c,n)]);
+          for(let i=0;i<col.length;i++){
+            for(let j=i+1;j<col.length;j++){
+              const a=col[i], b=col[j];
+              if(!a||!b) continue;
+              const ga = goalPos[a], gb = goalPos[b];
+              if(ga.c===c && gb.c===c && ga.r > gb.r) lc+=2;
+            }
+          }
+        }
+        return lc;
+      }
+
+      // Pattern database lookup (worker-side attempt) -- tries to look into precomputed small patterns passed via options
+      function patternDBHeuristic(arr){
+        // options.patternDB can be an object mapping 'patternKey'->value
+        try{
+          if(!options || !options.patternDB) return 0;
+          // simple two-tile group pattern example (not full PDB) — sum of lookups
+          let s = 0;
+          const pat = options.patternDB;
+          // create a key for a subset: positions of tiles 1..k
+          const k = Math.min(Object.keys(pat).length>0?Object.keys(pat).length:0, 15);
+          // The worker will be provided with a patterns object in options; otherwise ignore
+          for(const pk in pat){
+            if(!pat.hasOwnProperty(pk)) continue;
+            // if arr matches pattern key partially, use value
+            if(pk === 'all') { s += pat[pk]; }
+          }
+          return s;
+        }catch(e){ return 0; }
+      }
+
+      function combinedHeuristic(arr, fixedSet){
+        // combine manhattan + linear conflict + patternDB
+        const m = manhattanUnfixed(arr, fixedSet);
+        const lc = linearConflict(arr);
+        const pdb = patternDBHeuristic(arr);
+        return m + Math.floor(lc/1) + pdb;
+      }
+
       function neighborsOfEmpty(emptyIdx){
         const res=[];
-        const r=Math.floor(emptyIdx/size), c=emptyIdx%size;
+        const r=Math.floor(emptyIdx/nsize), c=emptyIdx%nsize;
         const deltas=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
         for(const d of deltas){
           const nr=r+d.dr, nc=c+d.dc;
-          if(nr>=0 && nr<size && nc>=0 && nc<size) res.push(nr*size+nc);
+          if(nr>=0 && nr<nsize && nc>=0 && nc<nsize) res.push(nr*nsize+nc);
         }
         return res;
       }
 
+      /* ----------------
+         IDA* placement (already present) - kept and slightly extended
+         ---------------- */
       function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=300000, tCap=5000){
         const state = currentState.slice();
         let empty = state.indexOf(null);
@@ -610,6 +689,9 @@ function solverWorkerFunction(){
         return null;
       }
 
+      /* ----------------
+         BFS placement
+         ---------------- */
       function bfsPlaceTile(currentState, fixedSet, targetVal, targetGoalIdx){
         const start = currentState.slice();
         const startEmpty = start.indexOf(null);
@@ -643,6 +725,454 @@ function solverWorkerFunction(){
         return null;
       }
 
+      /* ----------------
+         A* (general solver) - uses combined heuristic
+         ---------------- */
+      function aStarSolve(initialState, nodeLimit=500000, timeLimit=15000){
+        const startKey = initialState.map(x=>x===null?0:x).join(',');
+        const n = nsize;
+        const goalArr = [];
+        for(let i=1;i<=n*n-1;i++) goalArr.push(i);
+        goalArr.push(null);
+        const goalKey = goalArr.map(x=>x===null?0:x).join(',');
+        if(startKey === goalKey) return [];
+        const open = new FastPriorityQueue((a,b)=>a.f < b.f);
+        const cameFrom = new Map();
+        const gScore = new Map();
+        function keyOf(arr){ return arr.map(x=>x===null?0:x).join(','); }
+        function cloneArr(a){ return a.slice(); }
+        const h0 = combinedHeuristic(initialState, new Set());
+        open.add({arr: cloneArr(initialState), empty: initialState.indexOf(null), g:0, f:h0});
+        gScore.set(startKey, 0);
+        const startTime = Date.now();
+        let nodes=0;
+        while(!open.isEmpty()){
+          if(Date.now() - startTime > timeLimit) break;
+          const cur = open.poll();
+          nodes++;
+          const curKey = keyOf(cur.arr);
+          if(curKey === goalKey){
+            // reconstruct moves
+            const moves = [];
+            let k = curKey;
+            while(cameFrom.has(k)){
+              const info = cameFrom.get(k);
+              moves.unshift(info.move);
+              k = info.prev;
+            }
+            return moves;
+          }
+          const neigh = neighborsOfEmpty(cur.empty);
+          for(const idx of neigh){
+            const newA = cur.arr.slice();
+            newA[cur.empty] = newA[idx];
+            newA[idx] = null;
+            const nk = keyOf(newA);
+            const tentative_g = cur.g + 1;
+            if(!gScore.has(nk) || tentative_g < gScore.get(nk)){
+              gScore.set(nk, tentative_g);
+              const hval = combinedHeuristic(newA, new Set());
+              const f = tentative_g + hval;
+              open.add({arr:newA, empty: idx, g:tentative_g, f});
+              cameFrom.set(nk, {prev: curKey, move: newA[cur.empty]});
+            }
+            if(nodes > nodeLimit) break;
+          }
+          if(nodes > nodeLimit) break;
+        }
+        return null;
+      }
+
+      /* ----------------
+         Bidirectional BFS (for short path hints)
+         ---------------- */
+      function bidirectionalSearch(initialState, timeLimit=8000){
+        const start = initialState.slice();
+        const goal = [];
+        for(let i=1;i<=nsize*nsize-1;i++) goal.push(i);
+        goal.push(null);
+        const key = s=>s.map(x=>x===null?'_':x).join(',');
+        const sKey = key(start);
+        const gKey = key(goal);
+        if(sKey === gKey) return [];
+        const frontA = new Map();
+        const frontB = new Map();
+        const qA = [ {arr:start, empty: start.indexOf(null), path:[]} ];
+        const qB = [ {arr:goal, empty: goal.indexOf(null), path:[]} ];
+        frontA.set(sKey, []);
+        frontB.set(gKey, []);
+        const startTime = Date.now();
+        const maxNodes = 200000;
+        let nodes = 0;
+        while(qA.length && qB.length){
+          if(Date.now() - startTime > timeLimit) break;
+          // expand smaller frontier
+          if(qA.length <= qB.length){
+            const node = qA.shift(); nodes++;
+            const nodeKey = key(node.arr);
+            if(frontB.has(nodeKey)){
+              // merge
+              const pathA = node.path;
+              const pathB = frontB.get(nodeKey);
+              return pathA.concat(pathB.slice().reverse());
+            }
+            const neigh = neighborsOfEmpty(node.empty);
+            for(const idx of neigh){
+              const newA = node.arr.slice();
+              newA[node.empty] = newA[idx];
+              newA[idx] = null;
+              const nk = key(newA);
+              if(frontA.has(nk)) continue;
+              frontA.set(nk, node.path.concat([newA[node.empty]]));
+              qA.push({arr:newA, empty: idx, path: node.path.concat([newA[node.empty]])});
+              if(nodes>maxNodes) break;
+            }
+          } else {
+            const node = qB.shift(); nodes++;
+            const nodeKey = key(node.arr);
+            if(frontA.has(nodeKey)){
+              const pathA = frontA.get(nodeKey);
+              const pathB = node.path;
+              return pathA.concat(pathB.slice().reverse());
+            }
+            const neigh = neighborsOfEmpty(node.empty);
+            for(const idx of neigh){
+              const newA = node.arr.slice();
+              newA[node.empty] = newA[idx];
+              newA[idx] = null;
+              const nk = key(newA);
+              if(frontB.has(nk)) continue;
+              frontB.set(nk, node.path.concat([newA[node.empty]]));
+              qB.push({arr:newA, empty: idx, path: node.path.concat([newA[node.empty]])});
+              if(nodes>maxNodes) break;
+            }
+          }
+          if(nodes>maxNodes) break;
+        }
+        return null;
+      }
+
+      /* ----------------
+         Greedy Best-First
+         ---------------- */
+      function greedyBestFirst(initialState, timeLimit=6000){
+        const open = new FastPriorityQueue((a,b)=>a.h < b.h);
+        const keyOf = a => a.map(x=>x===null?0:x).join(',');
+        open.add({arr: initialState.slice(), empty: initialState.indexOf(null), h: combinedHeuristic(initialState, new Set()), path: []});
+        const seen = new Set();
+        const startTime = Date.now();
+        let nodes=0;
+        while(!open.isEmpty()){
+          if(Date.now() - startTime > timeLimit) break;
+          const cur = open.poll();
+          nodes++;
+          const k = keyOf(cur.arr);
+          if(seen.has(k)) continue;
+          seen.add(k);
+          if(combinedHeuristic(cur.arr, new Set())===0) return cur.path;
+          const neigh = neighborsOfEmpty(cur.empty);
+          for(const idx of neigh){
+            const newA = cur.arr.slice();
+            newA[cur.empty] = newA[idx];
+            newA[idx] = null;
+            const mv = newA[cur.empty];
+            open.add({arr:newA, empty: idx, h: combinedHeuristic(newA, new Set()), path: cur.path.concat([mv])});
+          }
+          if(nodes>200000) break;
+        }
+        return null;
+      }
+
+      /* ----------------
+         Simulated Annealing (stochastic improvement)
+         ---------------- */
+      function simulatedAnnealing(initialState, maxIter=6000, startTemp=10.0){
+        let best = initialState.slice();
+        let cur = initialState.slice();
+        let empty = cur.indexOf(null);
+        function score(s){ return -combinedHeuristic(s, new Set()); } // higher is better
+        let bestScore = score(best);
+        let curScore = bestScore;
+        const rand = Math.random;
+        for(let t=1;t<=maxIter;t++){
+          const neigh = neighborsOfEmpty(empty);
+          const pick = neigh[Math.floor(rand()*neigh.length)];
+          // move
+          const newA = cur.slice();
+          newA[empty] = newA[pick]; newA[pick] = null;
+          const newScore = score(newA);
+          const temp = startTemp * (1 - t/maxIter);
+          if(newScore > curScore || Math.exp((newScore - curScore)/Math.max(1e-6,temp)) > rand()){
+            cur = newA; curScore = newScore; empty = cur.indexOf(null);
+            if(curScore > bestScore){ best = cur.slice(); bestScore = curScore; }
+          }
+          if(bestScore === 0) break;
+        }
+        // reconstruct simple path from initial to best by greedy steps (approx)
+        const path = greedyBestFirst(best, 2000);
+        return path;
+      }
+
+      /* ----------------
+         Genetic Algorithm (operates on sequences of moves as chromosomes)
+         ---------------- */
+      function geneticSolve(initialState, popSize=60, genLimit=150, seqLen=80){
+        // chromosome: sequence of moves (tile numbers); evaluation = -combinedHeuristic(after applying seq)
+        function applySeq(arr, seq){
+          const a = arr.slice();
+          for(const mv of seq){
+            const tileIdx = a.indexOf(mv);
+            const emptyIdx = a.indexOf(null);
+            const r1 = Math.floor(tileIdx/nsize), c1 = tileIdx%nsize;
+            const r2 = Math.floor(emptyIdx/nsize), c2 = emptyIdx%nsize;
+            const adj = (r1===r2 && Math.abs(c1-c2)===1) || (c1===c2 && Math.abs(r1-r2)===1);
+            if(adj){ a[emptyIdx] = a[tileIdx]; a[tileIdx] = null; }
+            else {
+              // invalid move: try to move a random neighbor instead
+              const neigh = neighborsOfEmpty(emptyIdx);
+              const t = neigh[0]; a[emptyIdx] = a[t]; a[t]=null;
+            }
+          }
+          return a;
+        }
+        function randSeq(){
+          const seq = [];
+          for(let i=0;i<seqLen;i++){
+            const possible = [];
+            const e = initialState.indexOf(null);
+            const neigh = neighborsOfEmpty(e);
+            for(const idx of neigh) possible.push(initialState[idx]);
+            if(possible.length===0) possible.push(1);
+            seq.push(possible[Math.floor(Math.random()*possible.length)]);
+          }
+          return seq;
+        }
+        let population = [];
+        for(let i=0;i<popSize;i++) population.push(randSeq());
+        for(let gen=0;gen<genLimit;gen++){
+          // evaluate
+          const scored = population.map(ch => {
+            const res = applySeq(initialState, ch);
+            const fitness = -combinedHeuristic(res, new Set());
+            return {ch,fitness};
+          }).sort((a,b)=>b.fitness-a.fitness);
+          if(scored[0].fitness === 0) return scored[0].ch;
+          // select top 20
+          const elites = scored.slice(0, Math.max(4, Math.floor(popSize*0.2))).map(s=>s.ch);
+          const newPop = elites.slice();
+          while(newPop.length < popSize){
+            const p1 = elites[Math.floor(Math.random()*elites.length)];
+            const p2 = elites[Math.floor(Math.random()*elites.length)];
+            // crossover
+            const cx = Math.floor(Math.random()*seqLen);
+            const child = p1.slice(0,cx).concat(p2.slice(cx));
+            // mutate
+            if(Math.random() < 0.15){
+              const mi = Math.floor(Math.random()*seqLen);
+              child[mi] = child[Math.floor(Math.random()*seqLen)];
+            }
+            newPop.push(child);
+          }
+          population = newPop;
+        }
+        // return best found
+        const finalScore = population.map(ch=>({ch,fitness:-combinedHeuristic(applySeq(initialState,ch), new Set())})).sort((a,b)=>b.fitness-a.fitness)[0];
+        return finalScore ? finalScore.ch : null;
+      }
+
+      /* ----------------
+         Monte Carlo Tree Search (very simple playout-based)
+         ---------------- */
+      function mctsSolve(initialState, sims=800){
+        function randomPlayout(state, depthLimit=60){
+          const s = state.slice();
+          for(let d=0;d<depthLimit;d++){
+            const e = s.indexOf(null);
+            const neigh = neighborsOfEmpty(e);
+            const pick = neigh[Math.floor(Math.random()*neigh.length)];
+            s[e] = s[pick]; s[pick] = null;
+            if(combinedHeuristic(s,new Set())===0) return {solved:true, depth:d+1};
+          }
+          return {solved:false};
+        }
+        // generate candidates from one move
+        const e = initialState.indexOf(null);
+        const neigh = neighborsOfEmpty(e);
+        const actions = neigh.map(idx=>initialState[idx]);
+        const stats = actions.map(a=>({a, wins:0, plays:0}));
+        for(let i=0;i<sims;i++){
+          const pick = stats[Math.floor(Math.random()*stats.length)];
+          // apply move
+          const st = initialState.slice();
+          const ti = st.indexOf(pick);
+          const ei = st.indexOf(null);
+          st[ei] = st[ti]; st[ti]=null;
+          const res = randomPlayout(st, 40);
+          pick.plays++; if(res.solved) pick.wins++;
+        }
+        // choose best
+        stats.sort((a,b)=> (b.wins/b.plays || 0) - (a.wins/a.plays || 0));
+        // return sequence starting with best action then greedy
+        const first = stats.length?stats[0].a:null;
+        if(!first) return null;
+        // now try greedy from that state
+        const s2 = initialState.slice();
+        const ti = s2.indexOf(first);
+        const ei = s2.indexOf(null);
+        s2[ei] = s2[ti]; s2[ti] = null;
+        const path = greedyBestFirst(s2, 8000);
+        if(path) return [first].concat(path);
+        return null;
+      }
+
+      /* ----------------
+         Beam Search (limited width)
+         ---------------- */
+      function beamSearch(initialState, width=8, depth=40){
+        let beam = [{arr: initialState.slice(), empty: initialState.indexOf(null), path: [], score: combinedHeuristic(initialState, new Set())}];
+        for(let d=0;d<depth;d++){
+          const candidates = [];
+          for(const b of beam){
+            const neigh = neighborsOfEmpty(b.empty);
+            for(const idx of neigh){
+              const newA = b.arr.slice();
+              newA[b.empty] = newA[idx]; newA[idx] = null;
+              const sc = combinedHeuristic(newA, new Set());
+              candidates.push({arr:newA, empty: idx, path: b.path.concat([newA[b.empty]]), score: sc});
+            }
+          }
+          candidates.sort((a,b)=>a.score - b.score);
+          beam = candidates.slice(0, width);
+          if(beam.length && beam[0].score === 0) return beam[0].path;
+        }
+        return null;
+      }
+
+      /* ----------------
+         Hill Climbing (greedy local ascent)
+         ---------------- */
+      function hillClimb(initialState, iter=2000){
+        let cur = initialState.slice();
+        let e = cur.indexOf(null);
+        for(let i=0;i<iter;i++){
+          const neigh = neighborsOfEmpty(e);
+          let best = null; let bestScore = Infinity;
+          for(const idx of neigh){
+            const newA = cur.slice(); newA[e] = newA[idx]; newA[idx] = null;
+            const sc = combinedHeuristic(newA, new Set());
+            if(sc < bestScore){ bestScore = sc; best = {arr:newA, empty: idx}; }
+          }
+          if(!best) break;
+          if(bestScore >= combinedHeuristic(cur, new Set())) break;
+          cur = best.arr; e = best.empty;
+          if(bestScore===0) return []; // we reached goal but no moves recorded
+        }
+        // try greedy solver from cur
+        return greedyBestFirst(cur, 3000);
+      }
+
+      /* ----------------
+         DFS depth-limited (used as fallback)
+         ---------------- */
+      function depthLimitedDFS(initialState, limit=50){
+        const start = initialState.slice();
+        const seen = new Set();
+        const key = s => s.map(x=>x===null?'_':x).join(',');
+        let found = null;
+        function dfs(arr, empty, depth, path, prev){
+          if(depth>limit) return;
+          const k = key(arr); if(seen.has(k)) return; seen.add(k);
+          if(combinedHeuristic(arr, new Set())===0){ found = path.slice(); return; }
+          const neigh = neighborsOfEmpty(empty);
+          for(const idx of neigh){ if(prev===idx) continue; const newA = arr.slice(); newA[empty] = newA[idx]; newA[idx]=null; path.push(newA[empty]); dfs(newA, idx, depth+1, path, empty); if(found) return; path.pop(); }
+        }
+        dfs(start, start.indexOf(null), 0, [], undefined);
+        return found;
+      }
+
+      /* ----------------
+         Top-level orchestration: try a sequence of algorithms with small timecaps
+         ---------------- */
+      (async function orchestrate(){
+        try{
+          // Try quick cheap heuristics first
+          const attemptOrder = [
+            {fn: (s)=>{ return bidirectionalSearch(s, 5000); }, name:'bidirectional', cap:5000},
+            {fn: (s)=>{ return greedyBestFirst(s, 3500); }, name:'greedy', cap:3500},
+            {fn: (s)=>{ return beamSearch(s, 10, 30); }, name:'beam', cap:4000},
+            {fn: (s)=>{ return simulatedAnnealing(s, 3000); }, name:'anneal', cap:5000},
+            {fn: (s)=>{ return hillClimb(s, 1500); }, name:'hill', cap:3000},
+            {fn: (s)=>{ return aStarSolve(s, 300000, 7000); }, name:'astar', cap:8000},
+            {fn: (s)=>{ return idaFull(s, 800000, 20000); }, name:'ida', cap:22000},
+            {fn: (s)=>{ return geneticSolve(s, 50, 120, 70); }, name:'genetic', cap:15000},
+            {fn: (s)=>{ return mctsSolve(s, 600); }, name:'mcts', cap:8000},
+            {fn: (s)=>{ return depthLimitedDFS(s, 40); }, name:'dfs', cap:5000}
+          ];
+
+          // If options specify algorithm preference, push it first
+          if(options && options.prefer && options.prefer.length){
+            // reorder attemptOrder to put preferred at start
+            attemptOrder.sort((a,b)=>{ const ai = options.prefer.indexOf(a.name); const bi = options.prefer.indexOf(b.name); if(ai===-1) return 1; if(bi===-1) return -1; return ai-bi; });
+          }
+
+          for(const at of attemptOrder){
+            // small delay to allow message processing
+            const result = at.fn(startState);
+            if(result && Array.isArray(result) && result.length>0){
+              self.postMessage({type:'done', moves:result, method: 'worker_'+at.name});
+              return;
+            }
+            // if result is null continue
+          }
+
+          // as final fallback try full staged approach similar to original (3x3, 4x4, 5x5 specialized)
+          if(nsize === 4){
+            // Reuse original staged 4x4 logic here (simplified)
+            const working = startState.slice();
+            let allMoves = [];
+            const fixedIndices = new Set();
+            for(let c=0;c<nsize;c++){
+              const targetVal = c+1; const goalIdx = c;
+              if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+              let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 300000, 4000);
+              if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+              if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
+              for(const mv of moves){ const fromIdx = working.indexOf(mv); const eIdx = working.indexOf(null); working[eIdx]=mv; working[fromIdx]=null; allMoves.push(mv); }
+              if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return; }
+              fixedIndices.add(goalIdx);
+            }
+            const restMoves = idaFull(working, 600000, 16000);
+            if(restMoves && restMoves.length>0){ for(const mv of restMoves){ const fromIdx = working.indexOf(mv); const eIdx = working.indexOf(null); working[eIdx]=mv; working[fromIdx]=null; allMoves.push(mv);} self.postMessage({type:'done', moves:allMoves, method:'4x4_stage2_ida'}); return;} else { self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'4x4_stage2_fail'}); return; }
+          }
+
+          if(nsize === 5){
+            const working = startState.slice();
+            let allMoves = [];
+            const fixedIndices = new Set();
+            for(let idxTile = 0; idxTile < 15; idxTile++){
+              const targetVal = idxTile + 1; const goalIdx = idxTile;
+              if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+              let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 250000, 4000);
+              if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+              if(!moves){ self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal}); return; }
+              for(const mv of moves){ const fromIdx = working.indexOf(mv); const eIdx = working.indexOf(null); working[eIdx] = mv; working[fromIdx] = null; allMoves.push(mv); }
+              if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal}); return; }
+              fixedIndices.add(goalIdx);
+            }
+            const restMoves = idaFull(working, 600000, 20000);
+            if(restMoves && restMoves.length > 0){ for(const mv of restMoves){ const fromIdx = working.indexOf(mv); const eIdx = working.indexOf(null); working[eIdx] = mv; working[fromIdx] = null; allMoves.push(mv);} self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'}); return; } else { self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'}); return; }
+          }
+
+          // 3x3
+          if(nsize<=3){ const moves = idaFull(startState); self.postMessage({type:'done', moves:moves, method:'3x3_ida'}); return; }
+
+          // fallback
+          const fallback = idaFull(startState, 150000, 7000);
+          self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
+        }catch(e){ self.postMessage({type:'done', moves:null, method:'orchestrate_exception', error: String(e)}); }
+      })();
+
+      // IDA* full (copied here because used by orchestrate internals)
       function idaFull(initial, nodeCap=1000000, tCap=20000){
         const state = initial.slice();
         let empty = state.indexOf(null);
@@ -693,134 +1223,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      // 4x4 solver (original staged approach)
-      if(size === 4){
-        const working = startState.slice();
-        let allMoves = [];
-        const fixedIndices = new Set();
-        try{
-          for(let c=0; c<size; c++){
-            const targetVal = c+1;
-            const goalIdx = c;
-            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
-            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 300000, 4000);
-            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
-            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
-            for(const mv of moves){
-              const fromIdx = working.indexOf(mv);
-              const eIdx = working.indexOf(null);
-              working[eIdx]=mv; working[fromIdx]=null;
-              allMoves.push(mv);
-            }
-            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
-            fixedIndices.add(goalIdx);
-          }
-          for(let i=4;i<=5;i++){
-            const targetVal = i+1;
-            const goalIdx = i;
-            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
-            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 200000, 3500);
-            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
-            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
-            for(const mv of moves){
-              const fromIdx = working.indexOf(mv);
-              const eIdx = working.indexOf(null);
-              working[eIdx]=mv; working[fromIdx]=null;
-              allMoves.push(mv);
-            }
-            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
-            fixedIndices.add(goalIdx);
-          }
-          const restMoves = idaFull(working, 600000, 16000);
-          if(restMoves&&restMoves.length>0){
-            for(const mv of restMoves){
-              const fromIdx = working.indexOf(mv);
-              const eIdx = working.indexOf(null);
-              working[eIdx]=mv; working[fromIdx]=null;
-              allMoves.push(mv);
-            }
-            self.postMessage({type:'done', moves:allMoves, method:'4x4_stage2_ida'});
-            return;
-          }else{
-            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'4x4_stage2_fail'});
-            return;
-          }
-        }catch(e){
-          self.postMessage({type:'done', moves:null, method:'4x4_exception', error:String(e)});
-          return;
-        }
-      }
-
-      // 5x5: place 1..15 serially, then IDA* the rest
-      if(size===5){
-        const working = startState.slice();
-        let allMoves = [];
-        const fixedIndices = new Set();
-        try{
-          // place tiles 1..15, one by one
-          for(let idxTile = 0; idxTile < 15; idxTile++){
-            const targetVal = idxTile + 1;
-            const goalIdx = idxTile;
-            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
-
-            // try targeted IDA* for the single tile with moderate caps
-            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 250000, 4000);
-
-            // fallback to BFS placement if IDA* couldn't find quickly
-            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
-            if(!moves){
-              // if both fail, report fail
-              self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal});
-              return;
-            }
-            // apply moves to working
-            for(const mv of moves){
-              const fromIdx = working.indexOf(mv);
-              const eIdx = working.indexOf(null);
-              working[eIdx] = mv;
-              working[fromIdx] = null;
-              allMoves.push(mv);
-            }
-            if(working[goalIdx]!==targetVal){
-              self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal});
-              return;
-            }
-            fixedIndices.add(goalIdx);
-          }
-
-          // Now remaining tiles (16..24) solve with a full IDA*
-          const restMoves = idaFull(working, 600000, 20000);
-          if(restMoves && restMoves.length > 0){
-            for(const mv of restMoves){
-              const fromIdx = working.indexOf(mv);
-              const eIdx = working.indexOf(null);
-              working[eIdx] = mv;
-              working[fromIdx] = null;
-              allMoves.push(mv);
-            }
-            self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'});
-            return;
-          } else {
-            // if rest failed, return what we have (partial) so main thread can decide
-            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'});
-            return;
-          }
-        }catch(e){
-          self.postMessage({type:'done', moves:null, method:'5x5_exception', error:String(e)});
-          return;
-        }
-      }
-
-      // 3x3 classic
-      if(size<=3){
-        const moves = idaFull(startState);
-        self.postMessage({type:'done', moves:moves, method:'3x3_ida'});
-        return;
-      }
-
-      // fallback
-      const fallback = idaFull(startState, 150000, 7000);
-      self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
     }catch(e){
       self.postMessage({type:'done', moves:null, method:'worker_crash', error: String(e)});
     }
@@ -836,7 +1238,7 @@ let solverRunning = false;
 let queuedMoves = [];
 
 /* ============================
-   START SOLVER with RTDB checks/saves
+   START SOLVER with RTDB checks/saves + multi-algo orchestration
    ============================ */
 
 async function startSolver(){
@@ -917,7 +1319,11 @@ async function startSolver(){
     solverWorker = null;
   };
 
-  solverWorker.postMessage({type:'solve', state: snapshot, size});
+  // send options: attempt to include a tiny patternDB object (if available locally in clientStorage)
+  let options = { prefer: ['astar','ida','greedy'] };
+  try{ const localPDB = window.localStorage.getItem('pdb_'+size); if(localPDB) options.patternDB = JSON.parse(localPDB); }catch(e){}
+
+  solverWorker.postMessage({type:'solve', state: snapshot, size, options});
 }
 
 function stopSolverNow(){
@@ -1007,6 +1413,29 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
   }
   loopMessages();
 })();
+
+/*
+  Additional helpers for experimenting & debugging:
+  - exportStateToRTDB(size): push current arrangement to RTDB as sample
+  - importPatternDBFromRTDB(size): attempt to download pattern DB heuristics from the main RTDB and store in localStorage
+*/
+
+async function exportStateToRTDB(){
+  if(!mainDb) return alert('No main RTDB configured');
+  const k = encodeStateKey(tiles);
+  const payload = { sample: tiles, createdAt: Date.now() };
+  try{ await mainDb.ref(`/samples/${size}/${encodeURIComponent(k)}`).set(payload); alert('Exported sample to RTDB'); }catch(e){ console.warn(e); alert('Export failed'); }
+}
+
+async function importPatternDBFromRTDB(sizeToLoad){
+  if(!mainDb) return console.warn('no maindb');
+  try{
+    const snap = await mainDb.ref(`/patternDB/${sizeToLoad}`).once('value');
+    if(snap && snap.exists()){ const val = snap.val(); window.localStorage.setItem('pdb_'+sizeToLoad, JSON.stringify(val)); console.log('Imported patternDB to localStorage'); return val; }
+  }catch(e){ console.warn(e); }
+  return null;
+}
+
 </script>
 </body>
   </html>
