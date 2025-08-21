@@ -11,7 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-database-compat.js"></script>
 
-  <!-- Extra algorithm / utility / worker libs (10+ as requested) -->
+  <!-- Extra algorithm / utility / worker libs (10+ as requested earlier) -->
   <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fastpriorityqueue@0.7.2/FastPriorityQueue.min.js"></script>
@@ -298,9 +298,7 @@ async function checkRTDBForSolution(size, key) {
         return val.moves;
       }
     }
-  } catch (e) {
-    console.warn('RTDB read failed', e);
-  }
+  } catch (e) { console.warn('RTDB read failed', e); }
   return null;
 }
 
@@ -312,9 +310,7 @@ async function saveToRTDB(size, key, moves, meta = {}) {
     await ref.set(payload);
     solutionCacheRTDB.set(size + '|' + key, moves);
     console.log(`Saved solution for size ${size} to main RTDB (key=${key})`);
-  } catch (e) {
-    console.warn('RTDB save failed', e);
-  }
+  } catch (e) { console.warn('RTDB save failed', e); }
 }
 
 async function checkAll5RTDBsForSolution(key) {
@@ -331,9 +327,7 @@ async function checkAll5RTDBsForSolution(key) {
           return val.moves;
         }
       }
-    } catch (e) {
-      console.warn('5x5 RTDB read failed for one app', e);
-    }
+    } catch (e) { console.warn('5x5 RTDB read failed for one app', e); }
   }
   return null;
 }
@@ -346,9 +340,7 @@ async function saveToAll5RTDBs(key, moves, meta = {}) {
       await ref.set(payload);
       console.log('Saved to a 5x5 RTDB for key', key);
       solutionCache5RTDBs.set(key, moves);
-    } catch (e) {
-      console.warn('5x5 RTDB write failed for one app', e);
-    }
+    } catch (e) { console.warn('5x5 RTDB write failed for one app', e); }
   }
 }
 
@@ -510,7 +502,6 @@ function calcProgress(arr, sz){
     return Math.round(cnt/15*100);
   }
   if(sz===5){
-    // 5×5: first 12 tiles (stage1) + rest
     let stage1=0, total=0;
     const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
     for(const i of st1idx) if(arr[i]===i+1) stage1++;
@@ -529,7 +520,7 @@ function updateProgressBar(){
 }
 
 /* ----------- Worker-based multi-stage hybrid solver -----------
-   Now: 5×5 stage1 = serial place tiles 1..15, then IDA* for remaining
+   Now: 5×5 stage1 = serial place tiles 1..15, then IDA* for the rest
    All heavy computation runs inside this worker to avoid browser freeze.
 */
 
@@ -843,19 +834,6 @@ const workerUrl = URL.createObjectURL(workerBlob);
 let solverWorker = null;
 let solverRunning = false;
 let queuedMoves = [];
-let stuckRefreshTimer = null;
-
-function startStuckTimer(){
-  clearStuckTimer();
-  stuckRefreshTimer = setTimeout(()=>{
-    console.warn('Solver appears stuck. Reloading page to recover.');
-    try { if(solverWorker) solverWorker.terminate(); } catch(e){}
-    location.reload();
-  }, 5000); // 5 seconds as requested
-}
-function clearStuckTimer(){
-  if(stuckRefreshTimer){ clearTimeout(stuckRefreshTimer); stuckRefreshTimer = null; }
-}
 
 /* ============================
    START SOLVER with RTDB checks/saves
@@ -870,15 +848,11 @@ async function startSolver(){
   const snapshot = tiles.slice();
   const key = encodeStateKey(snapshot);
 
-  // start stuck timer: if nothing clears it in 5s -> reload
-  startStuckTimer();
-
   // 1) size <= 4 -> check main RTDB first
   if (size <= 4) {
     try {
       const found = await checkRTDBForSolution(size, key);
       if (found && Array.isArray(found) && found.length) {
-        clearStuckTimer();
         applyMovesSequence(found);
         solverRunning = true;
         return;
@@ -891,7 +865,6 @@ async function startSolver(){
     try {
       const found5 = await checkAll5RTDBsForSolution(key);
       if (found5 && Array.isArray(found5) && found5.length) {
-        clearStuckTimer();
         applyMovesSequence(found5);
         solverRunning = true;
         return;
@@ -902,10 +875,10 @@ async function startSolver(){
   // 3) Not in DB -> run worker; after result, save to appropriate RTDB(s)
   solverWorker = new Worker(workerUrl);
   solverWorker.onmessage = async function(ev){
-    clearStuckTimer();
     const data = ev.data;
     const moves = data.moves;
     if(!moves){
+      // solver returned null / failed; no auto-reload — inform user and allow retry
       solveBtn.disabled = false;
       gridEl.style.pointerEvents = '';
       solverRunning = false;
@@ -917,12 +890,10 @@ async function startSolver(){
         else if(data.method.startsWith('5x5_stage2_fail')) msg="৫×৫ puzzle: শেষ stage-এ আটকে গেছে!";
         else msg = 'Solver could not finish (method: '+data.method+').';
       }
-      alert(msg);
-      // ensure worker terminated
-      try { solverWorker.terminate(); } catch(e){ }
+      console.warn('Solver failed:', data);
+      alert(msg + ' (কনসোল দেখো বিস্তারিতের জন্য)।');
+      try { solverWorker.terminate(); } catch(e){}
       solverWorker = null;
-      // reload after 5s to recover
-      setTimeout(()=>location.reload(), 5000);
       return;
     }
 
@@ -946,7 +917,6 @@ async function startSolver(){
     solverWorker = null;
   };
 
-  // post to worker (start solving)
   solverWorker.postMessage({type:'solve', state: snapshot, size});
 }
 
@@ -956,7 +926,6 @@ function stopSolverNow(){
   solveBtn.disabled = false;
   gridEl.style.pointerEvents = '';
   queuedMoves = [];
-  clearStuckTimer();
 }
 
 function applyMovesSequence(moves){
