@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="bn" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sliding Puzzle — Solver (Stages+Progress+URL+RTDB)</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- firebase compat + realtime database -->
+  <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-database-compat.js"></script>
+
+  <style>
+    /* ----------------- আগের CSS অপরিবর্তিত ----------------- */
+    body { background:#0d1117; color:#c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    #homeScreen,#gameContainer { background:#161b22cc; box-shadow:0 8px 24px rgba(12,17,23,0.6); }
+    #toggleSlider { background:#238636; }
+    .tile {
+      position:absolute;
+      width: calc(100% / var(--grid-size) - 0.75rem);
+      height: calc(100% / var(--grid-size) - 0.75rem);
+      display:flex; align-items:center; justify-content:center;
+      border-radius:0.5rem; cursor:pointer; user-select:none;
+      font-size:2.5rem; font-weight:800; color:#e1e4e8;
+      background:linear-gradient(145deg,#3a3f4b,#2c303a);
+      box-shadow:0 6px 12px rgba(0,0,0,0.8), inset 0 3px 6px rgba(255,255,255,0.05);
+      transition: transform 0.3s ease;
+      text-shadow:0 0 4px #0008; backface-visibility:hidden;
+    }
+    .tile.hard { font-size:1.5rem; }
+    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.1) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
+    .tile.empty { background:transparent; box-shadow:none; cursor:default; pointer-events:none; }
+    #grid { position:relative; width:100%; height:100%; --grid-size:3; }
+    #modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; z-index:100; }
+    #modal { background:#21262d; padding:2rem; border-radius:1rem; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.7); }
+    #modal h2 { font-size:2rem; margin-bottom:1rem; color:#58a6ff; }
+    #modal button { margin-top:1rem; padding:0.75rem 1.5rem; background:#238636; color:white; border:none; border-radius:0.5rem; font-size:1rem; cursor:pointer; transition:background 0.2s; }
+    #modal button:hover { background:#2ea043; }
+    #controls { width:100%; max-width:40rem; margin-top:36px; display:none; justify-content:center; gap:12px; align-items:center; }
+    #solveBtn {
+      padding:0.72rem 1.2rem; border-radius:0.75rem; font-size:1.05rem; font-weight:700;
+      cursor:pointer; background:#16a34a; color:white; border:none; box-shadow:0 8px 20px rgba(0,0,0,0.6);
+      transition: background .15s, transform .08s;
+    }
+    #solveBtn:hover{ background:#169e43; transform:translateY(-2px); }
+    #solveBtn:disabled{ background:#285c38; cursor:not-allowed; opacity:.85; transform:translateY(0); }
+    @media (max-width:640px){ #controls{ padding:0 12px; margin-top:26px; } #solveBtn{ width:90%; } }
+    #thinkingSmall { display:block; margin-top:6px; font-size:0.85em; color:#ddd; }
+    #thinking-container {
+      max-width: 360px;
+      margin: 20px auto 40px auto;
+      padding: 18px 22px;
+      background-color: #202124;
+      border-radius: 14px;
+      box-shadow:0 0 0 1px rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.4);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #e8eaed;
+      user-select: none;
+    }
+    #thinking-text {
+      font-size: 1.3rem;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      white-space: nowrap;
+      background: linear-gradient(90deg,#e8eaed 20%,#121212 40%,#e8eaed 60%);
+      background-repeat: no-repeat;
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shine-slide 2.5s linear infinite;
+    }
+    @keyframes shine-slide {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    #thinking-subtext {
+      margin-top: 12px;
+      font-style: italic;
+      font-weight: 400;
+      color: #c7c7c7;
+      min-height: 26px;
+      font-size: 1rem;
+      white-space: nowrap;
+    }
+    /* Progress Bar */
+    #progressBarWrap {
+      width:100%; max-width:34rem; margin:20px auto 0 auto;
+      background:#23272e; border-radius:0.7rem; height:1.2rem; box-shadow:0 2px 8px #0005;
+      overflow:hidden; position:relative;
+    }
+    #progressBar {
+      height:100%; background:linear-gradient(90deg,#238636,#58a6ff);
+      width:0%; transition:width 0.5s;
+    }
+    #progressText {
+      position:absolute; left:0; right:0; top:0; bottom:0; display:flex;
+      align-items:center; justify-content:center; font-size:.98rem; color:#fff; font-weight:700;
+      text-shadow:0 2px 8px #0009;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-6">
+
+  <!-- Home -->
+  <div id="homeScreen" class="w-full max-w-md p-8 rounded-3xl text-center mb-10 select-none">
+    <h1 class="text-white text-5xl font-extrabold mb-8 drop-shadow-lg">Sliding Puzzle Game</h1>
+    <div class="relative inline-block w-full bg-gray-800 rounded-full overflow-hidden shadow-inner">
+      <div id="toggleSlider" class="absolute top-0 left-0 rounded-full h-full w-1/3 transition-all duration-300 ease-in-out"></div>
+      <div class="flex text-gray-300 font-semibold text-xl cursor-pointer">
+        <div data-mode="easy" class="flex-1 py-4 z-10">Easy</div>
+        <div data-mode="normal" class="flex-1 py-4 z-10">Normal</div>
+        <div data-mode="hard" class="flex-1 py-4 z-10">Hard</div>
+      </div>
+    </div>
+    <button id="startBtn" class="mt-10 w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-2xl font-semibold shadow-lg transition duration-300">
+      Start Game
+    </button>
+    <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপতে পারো)।</p>
+  </div>
+
+  <!-- Game container -->
+  <div id="gameContainer" class="hidden w-full max-w-lg aspect-square rounded-3xl p-6 flex flex-col relative">
+    <div id="grid"></div>
+  </div>
+
+  <!-- Progress bar -->
+  <div id="progressBarWrap" style="display:none;">
+    <div id="progressBar"></div>
+    <div id="progressText"></div>
+  </div>
+
+  <!-- Controls below board (hidden on home) -->
+  <div id="controls">
+    <div id="thinkingSmall" aria-hidden="true"></div>
+    <div id="winner-message"></div>
+    <div id="game-board"></div>
+    <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
+      <div id="thinking-text">Solving With Stages...</div>
+      <div id="thinking-subtext"></div>
+    </div>
+    <button id="solveBtn" title="Bot Solve">Solve</button>
+  </div>
+
+  <!-- Modal -->
+  <div id="modalOverlay" class="flex">
+    <div id="modal">
+      <h2>🎉 You Solved It!</h2>
+      <p class="text-gray-300">Congratulations on completing the puzzle.</p>
+      <button id="closeModal">Close</button>
+    </div>
+  </div>
+
+<script>
+/* ============================
+   FIREBASE Realtime DB SETUP
+   ============================
+   Replace RTDB_MAIN_CONFIG and RTDB_5x5_CONFIGS with your project's credentials.
+   - RTDB_MAIN_CONFIG: used for 3x3 and 4x4
+   - RTDB_5x5_CONFIGS: array of 3 separate RTDB projects used for 5x5 (save & lookup in all)
+*/
+const RTDB_MAIN_CONFIG = {
+  apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
+  authDomain: "chatstudio-agent.firebaseapp.com",
+  databaseURL: "https://chatstudio-agent-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chatstudio-agent",
+  storageBucket: "chatstudio-agent.firebasestorage.app",
+  messagingSenderId: "626338448826",
+  appId: "1:626338448826:web:67936971701c3466d90983",
+  measurementId: "G-ZHNZHMYC0B"
+};
+
+const RTDB_5x5_CONFIGS = [
+  // RTDB project 1 (5x5 target)
+  {
+  apiKey: "AIzaSyA_kIamFMEt3CVrw8dkO6uBsVBoa7SHsng",
+  authDomain: "chatstudio-e6cfd.firebaseapp.com",
+  databaseURL: "https://chatstudio-e6cfd-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chatstudio-e6cfd",
+  storageBucket: "chatstudio-e6cfd.firebasestorage.app",
+  messagingSenderId: "64309638890",
+  appId: "1:64309638890:web:fe1121b95b7eb618b0c993",
+  measurementId: "G-STBZWFVDRX"
+
+  },
+  // RTDB project 2
+  {
+
+  apiKey: "AIzaSyDohgyc4pRldMVxbFRTkHnNfAIczf8JHMo",
+  authDomain: "puzzle-solver-4-1.firebaseapp.com",
+  databaseURL: "https://puzzle-solver-4-1-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "puzzle-solver-4-1",
+  storageBucket: "puzzle-solver-4-1.firebasestorage.app",
+  messagingSenderId: "422133823015",
+  appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
+
+  },
+  // RTDB project 3
+  {
+    
+  apiKey: "AIzaSyAKd2WmThKb4OM9pv0Bx9vtunmGpRGxczM",
+  authDomain: "puzzle-solver-5-2.firebaseapp.com",
+  databaseURL: "https://puzzle-solver-5-2-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "puzzle-solver-5-2",
+  storageBucket: "puzzle-solver-5-2.firebasestorage.app",
+  messagingSenderId: "221283910343",
+  appId: "1:221283910343:web:0bef0b54fe26e594c8f4e2"
+
+  }
+];
+
+/* Initialize default/main RTDB app (for 3x3 & 4x4) */
+let mainApp = null;
+let mainDb = null;
+try {
+  mainApp = firebase.initializeApp(RTDB_MAIN_CONFIG);
+  mainDb = firebase.database();
+} catch (e) {
+  console.warn('Main RTDB init failed (set RTDB_MAIN_CONFIG).', e);
+}
+
+/* Initialize RTDB apps for 5x5 (may be 0..3 depending on config) */
+const rtdb5Apps = []; // array of { app, db }
+for (let i = 0; i < RTDB_5x5_CONFIGS.length; i++) {
+  try {
+    const name = 'rtdb5_' + (i+1);
+    const app = firebase.initializeApp(RTDB_5x5_CONFIGS[i], name);
+    const db = firebase.database(app);
+    rtdb5Apps.push({ app, db });
+  } catch (err) {
+    console.warn('RTDB 5x5 app init failed for index', i, err);
+  }
+}
+
+/* ============================
+   Helpers: encode, deterministic 5x5 scramble, caches
+   ============================ */
+
+// Encode a state to a compact string key (0 for empty)
+function encodeStateKey(arr) {
+  return arr.map(v => v === null ? '0' : String(v)).join(',');
+}
+
+// deterministic scramble for 5x5 — starts from solved state and does fixed sequence of legal moves
+function deterministicScramble5x5() {
+  const n = 5;
+  const arr = [];
+  for (let i = 1; i <= n*n - 1; i++) arr.push(i);
+  arr.push(null); // solved
+  const seq = 'LLURRDLURDLURRDLUURRDLURDLURRDLU'.split(''); // fixed pattern
+  let empty = arr.indexOf(null);
+  function rc(idx){ return {r: Math.floor(idx/n), c: idx % n}; }
+  function idxFromRC(r,c){ return r*n + c; }
+  for (const m of seq) {
+    const {r,c} = rc(empty);
+    let nr = r, nc = c;
+    if (m === 'L') nc = c-1;
+    if (m === 'R') nc = c+1;
+    if (m === 'U') nr = r-1;
+    if (m === 'D') nr = r+1;
+    if (nr >= 0 && nr < n && nc >= 0 && nc < n) {
+      const ti = idxFromRC(nr,nc);
+      arr[empty] = arr[ti];
+      arr[ti] = null;
+      empty = ti;
+    }
+  }
+  return arr;
+}
+
+// in-memory caches (no localStorage)
+const solutionCacheRTDB = new Map();   // key: size + '|' + key -> moves array
+const solutionCache5RTDBs = new Map(); // key -> moves (for 5x5 across RTDBs)
+
+/* ============================
+   DB helpers: check & save
+   ============================ */
+
+async function checkRTDBForSolution(size, key) {
+  if (!mainDb) return null;
+  const cacheKey = size + '|' + key;
+  if (solutionCacheRTDB.has(cacheKey)) return solutionCacheRTDB.get(cacheKey);
+  try {
+    const ref = mainDb.ref(`/puzzles/${size}/${encodeURIComponent(key)}`);
+    const snap = await ref.once('value');
+    if (snap && snap.exists()) {
+      const val = snap.val();
+      if (val && val.moves) {
+        solutionCacheRTDB.set(cacheKey, val.moves);
+        return val.moves;
+      }
+    }
+  } catch (e) {
+    console.warn('RTDB read failed', e);
+  }
+  return null;
+}
+
+async function saveToRTDB(size, key, moves, meta = {}) {
+  if (!mainDb) return;
+  try {
+    const ref = mainDb.ref(`/puzzles/${size}/${encodeURIComponent(key)}`);
+    const payload = { moves: moves, meta: { createdAt: Date.now(), ...meta } };
+    await ref.set(payload);
+    solutionCacheRTDB.set(size + '|' + key, moves);
+  } catch (e) {
+    console.warn('RTDB save failed', e);
+  }
+}
+
+// 5x5: check across the configured RTDB projects
+async function checkAll5RTDBsForSolution(key) {
+  if (solutionCache5RTDBs.has(key)) return solutionCache5RTDBs.get(key);
+  for (const { db } of rtdb5Apps) {
+    try {
+      const ref = db.ref(`/puzzles/5/${encodeURIComponent(key)}`);
+      const snap = await ref.once('value');
+      if (snap && snap.exists()) {
+        const val = snap.val();
+        if (val && val.moves) {
+          solutionCache5RTDBs.set(key, val.moves);
+          return val.moves;
+        }
+      }
+    } catch (e) {
+      console.warn('5x5 RTDB read failed for one app', e);
+    }
+  }
+  return null;
+}
+
+async function saveToAll5RTDBs(key, moves, meta = {}) {
+  for (const { db } of rtdb5Apps) {
+    try {
+      const ref = db.ref(`/puzzles/5/${encodeURIComponent(key)}`);
+      const payload = { moves: moves, meta: { createdAt: Date.now(), ...meta } };
+      await ref.set(payload);
+      solutionCache5RTDBs.set(key, moves);
+    } catch (e) {
+      console.warn('5x5 RTDB write failed for one app', e);
+    }
+  }
+}
+
+/* ============================
+   Original UI & solver code (kept unchanged)
+   ============================ */
+
+/* --- UI/game state --- */
+const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
+let currentMode = 'easy';
+const homeScreen = document.getElementById('homeScreen');
+const gameContainer = document.getElementById('gameContainer');
+const gridEl = document.getElementById('grid');
+const toggleSlider = document.getElementById('toggleSlider');
+const startBtn = document.getElementById('startBtn');
+const modalOverlay = document.getElementById('modalOverlay');
+const closeModal = document.getElementById('closeModal');
+const controls = document.getElementById('controls');
+const solveBtn = document.getElementById('solveBtn');
+// Progress bar
+const progressBarWrap = document.getElementById('progressBarWrap');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
+let size, tiles = [], emptyIndex;
+
+/* Mode switch with URL update */
+document.querySelectorAll('[data-mode]').forEach(el=>{
+  el.addEventListener('click', ()=> {
+    currentMode = el.dataset.mode;
+    const idx = ['easy','normal','hard'].indexOf(currentMode);
+    toggleSlider.style.left = `${idx*33.3333}%`;
+    // Change URL path
+    const p = modes[currentMode].path;
+    if(location.pathname!=="/"+p) history.replaceState({}, '', "/"+p);
+  });
+});
+
+/* Set URL mode on load */
+(function setModeFromUrl(){
+  const path = location.pathname.replace(/^\//,'');
+  if(path && Object.values(modes).some(m=>m.path===path)){
+    currentMode = Object.keys(modes).find(k=>modes[k].path===path) || "easy";
+  }
+  const idx = ['easy','normal','hard'].indexOf(currentMode);
+  toggleSlider.style.left = `${idx*33.3333}%`;
+})();
+
+function getTranslate(index){
+  const row = Math.floor(index/size), col = index%size;
+  const tileSize = gridEl.clientWidth/size;
+  return { x: col*tileSize, y: row*tileSize };
+}
+
+function createGrid(gridSize){
+  size = gridSize;
+  gridEl.style.setProperty('--grid-size', size);
+  gridEl.innerHTML = '';
+  tiles = Array.from({length:size*size-1},(_,i)=>i+1);
+  tiles.push(null);
+
+  // IMPORTANT: For 5x5 we must not random-shuffle — use deterministic scramble so every run is the same (solvable)
+  if (size === 5) {
+    tiles = deterministicScramble5x5();
+  } else {
+    shuffleTiles(tiles,size);
+  }
+
+  emptyIndex = tiles.indexOf(null);
+
+  tiles.forEach((num,i)=>{
+    if(num===null) return;
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    if(currentMode==='hard') tile.classList.add('hard');
+    tile.textContent = num;
+    const {x,y} = getTranslate(i);
+    tile.style.transform = `translate(${x}px,${y}px)`;
+    tile.dataset.number = num;
+    tile.dataset.position = i;
+    gridEl.appendChild(tile);
+  });
+  controls.style.display = 'flex';
+  progressBarWrap.style.display = 'block';
+  updateProgressBar();
+}
+
+function shuffleTiles(arr,s){
+  do{
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+  }while(!isSolvable(arr,s)||isSolved(arr));
+}
+
+function isSolvable(arr,s){
+  let inv=0, flat=arr.filter(x=>x!==null);
+  for(let i=0;i<flat.length;i++)
+    for(let j=i+1;j<flat.length;j++)
+      if(flat[i]>flat[j]) inv++;
+  if(s%2) return inv%2===0;
+  const er = Math.floor(arr.indexOf(null)/s);
+  return er%2?inv%2===0:inv%2!==0;
+}
+
+function isSolved(arr){
+  for(let i=0;i<arr.length-1;i++) if(arr[i]!==i+1) return false;
+  return arr[arr.length-1]===null;
+}
+
+function tryMove(tile){
+  const tilePos = +tile.dataset.position;
+  const emptyPos = emptyIndex;
+  const r1 = Math.floor(tilePos/size), c1 = tilePos%size;
+  const r2 = Math.floor(emptyPos/size), c2 = emptyPos%size;
+  const adj = (r1===r2 && Math.abs(c1-c2)===1) || (c1===c2 && Math.abs(r1-r2)===1);
+  if(!adj) return false;
+  [tiles[tilePos],tiles[emptyPos]]=[tiles[emptyPos],tiles[tilePos]];
+  const {x,y} = getTranslate(emptyPos);
+  tile.style.transform = `translate(${x}px,${y}px)`;
+  tile.dataset.position = emptyPos;
+  emptyIndex = tilePos;
+  updateProgressBar();
+  return true;
+}
+
+gridEl.addEventListener('click', e=>{
+  const tile = e.target.closest('.tile');
+  if(!tile) return;
+  if(tryMove(tile) && isSolved(tiles)){
+    modalOverlay.style.display = 'flex';
+    updateProgressBar();
+  }
+});
+
+startBtn.addEventListener('click', ()=>{
+  homeScreen.classList.add('hidden');
+  gameContainer.classList.remove('hidden');
+  createGrid(modes[currentMode].size);
+});
+
+closeModal.addEventListener('click', ()=>{ modalOverlay.style.display = 'none'; });
+
+window.addEventListener('resize', ()=>{
+  tiles.forEach(num=>{
+    if(num===null) return;
+    const tile = [...gridEl.children].find(t=>+t.dataset.number===num);
+    if(!tile) return;
+    const {x,y} = getTranslate(+tile.dataset.position);
+    tile.style.transform = `translate(${x}px,${y}px)`;
+  });
+});
+
+// Progress bar calculation — count locked/solved tiles (according to mode)
+function calcProgress(arr, sz){
+  if(sz===3) {
+    let cnt=0;
+    for(let i=0;i<8;i++) if(arr[i]===i+1) cnt++;
+    return Math.round(cnt/8*100);
+  }
+  if(sz===4) {
+    let cnt=0;
+    for(let i=0;i<15;i++) if(arr[i]===i+1) cnt++;
+    return Math.round(cnt/15*100);
+  }
+  if(sz===5){
+    // 5×5: first 12 tiles (stage1) + rest
+    let stage1=0, total=0;
+    // stage1: 0..4 (row1), 5..9 (row2), 10,11 (row3 col1,2)
+    const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
+    for(const i of st1idx) if(arr[i]===i+1) stage1++;
+    for(let i=0;i<24;i++) if(arr[i]===i+1) total++;
+    // stage1 worth 70%, rest 30%
+    return Math.round((stage1/12*70)+(total/24*30));
+  }
+  return 0;
+}
+
+function updateProgressBar(){
+  if(!tiles||!size) return;
+  const perc = calcProgress(tiles,size);
+  progressBar.style.width = perc+"%";
+  progressText.textContent = perc+"% solved";
+  if(perc===100) progressText.textContent = "🎉 Puzzle Solved!";
+}
+
+/* ----------- Worker-based multi-stage hybrid solver -----------
+   (identical to your original worker logic)
+*/
+function solverWorkerFunction(){
+  self.onmessage = function(ev){
+    try{
+      const {type, state, size} = ev.data;
+      if(type !== 'solve') return;
+      const startState = state.slice();
+
+      function idxToRC(i){ return {r: Math.floor(i/size), c: i%size}; }
+      const goalPos = {}; for(let v=1; v<=size*size-1; v++) goalPos[v] = idxToRC(v-1);
+
+      function manhattanUnfixed(arr, fixedSet){
+        let s = 0;
+        for(let i=0;i<arr.length;i++){
+          const v = arr[i]; if(v==null) continue;
+          const gi = v-1; if(fixedSet && fixedSet.has(gi)) continue;
+          const cur = idxToRC(i), g = goalPos[v];
+          if(!g) continue;
+          s += Math.abs(cur.r - g.r) + Math.abs(cur.c - g.c);
+        }
+        return s;
+      }
+
+      function neighborsOfEmpty(emptyIdx){
+        const res=[];
+        const r=Math.floor(emptyIdx/size), c=emptyIdx%size;
+        const deltas=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+        for(const d of deltas){
+          const nr=r+d.dr, nc=c+d.dc;
+          if(nr>=0 && nr<size && nc>=0 && nc<size) res.push(nr*size+nc);
+        }
+        return res;
+      }
+
+      function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=600_000, tCap=10_000){
+        const state = currentState.slice();
+        let empty = state.indexOf(null);
+        let nodes=0;
+        function h(){ return manhattanUnfixed(state, fixedSet); }
+        let threshold = h();
+        const path = [];
+        let found=null;
+        function dfs(eidx, g, prev){
+          nodes++;
+          if(nodes>nodeCap) return Infinity;
+          const hv = manhattanUnfixed(state, fixedSet);
+          const f = g + hv;
+          if(f > threshold) return f;
+          if(state[targetGoalIdx] === targetVal) { found = path.slice(); return 'FOUND'; }
+          let min=Infinity;
+          const neigh = neighborsOfEmpty(eidx);
+          const order = neigh.map(idx=>{
+            if(fixedSet.has(idx)) return {idx, hv2: 1e9};
+            const val = state[idx];
+            state[eidx]=val; state[idx]=null;
+            const hv2 = manhattanUnfixed(state, fixedSet);
+            state[idx]=val; state[eidx]=null;
+            return {idx, hv2};
+          }).filter(Boolean).sort((a,b)=>a.hv2-b.hv2);
+          for(const o of order){
+            const ti = o.idx;
+            if(prev !== undefined && ti === prev) continue;
+            if(fixedSet.has(ti)) continue;
+            const v = state[ti];
+            state[eidx] = v; state[ti] = null;
+            path.push(v);
+            const r = dfs(ti, g+1, eidx);
+            if(r === 'FOUND') return 'FOUND';
+            if(r < min) min = r;
+            path.pop();
+            state[ti] = v; state[eidx] = null;
+          }
+          return min;
+        }
+        const t0 = Date.now();
+        while(true){
+          nodes=0;
+          const r = dfs(empty, 0, undefined);
+          if(r === 'FOUND') return found;
+          if(r === Infinity || nodes > nodeCap) break;
+          threshold = r;
+          if(Date.now() - t0 > tCap) break;
+        }
+        return null;
+      }
+
+      function bfsPlaceTile(currentState, fixedSet, targetVal, targetGoalIdx){
+        const start = currentState.slice();
+        const startEmpty = start.indexOf(null);
+        const key = s => s.map(x=>x===null?'_':x).join(',');
+        const Queue = [];
+        const Seen = new Set();
+        Queue.push({arr:start.slice(), empty:startEmpty, path:[]});
+        Seen.add(key(start));
+        const maxNodes = 200_000;
+        let nodes=0;
+        const maxDepth = 40;
+        while(Queue.length){
+          const node = Queue.shift();
+          nodes++;
+          if(nodes > maxNodes) break;
+          if(node.arr[targetGoalIdx] === targetVal) return node.path.slice();
+          if(node.path.length >= maxDepth) continue;
+          const neigh = neighborsOfEmpty(node.empty);
+          for(const idx of neigh){
+            if(fixedSet.has(idx)) continue;
+            const newA = node.arr.slice();
+            newA[node.empty] = newA[idx];
+            newA[idx] = null;
+            const k = key(newA);
+            if(Seen.has(k)) continue;
+            Seen.add(k);
+            const newPath = node.path.slice(); newPath.push(newA[node.empty]);
+            Queue.push({arr:newA, empty: idx, path:newPath});
+          }
+        }
+        return null;
+      }
+
+      function idaFull(initial, nodeCap=5_000_000, tCap=30_000){
+        const state = initial.slice();
+        let empty = state.indexOf(null);
+        let nodes=0;
+        function h(){ return manhattanUnfixed(state, new Set()); }
+        let threshold = h();
+        const path=[];
+        let found=null;
+        function dfs(eidx, g, prev){
+          nodes++;
+          if(nodes>nodeCap) return Infinity;
+          const hv = manhattanUnfixed(state, new Set());
+          const f = g + hv;
+          if(f > threshold) return f;
+          if(hv===0){ found = path.slice(); return 'FOUND'; }
+          let min=Infinity;
+          const neigh = neighborsOfEmpty(eidx);
+          const order = neigh.map(idx=>{
+            const val = state[idx];
+            state[eidx]=val; state[idx]=null;
+            const hv2 = manhattanUnfixed(state, new Set());
+            state[idx]=val; state[eidx]=null;
+            return {idx,hv2};
+          }).sort((a,b)=>a.hv2-b.hv2);
+          for(const o of order){
+            const ti=o.idx;
+            if(prev !== undefined && ti===prev) continue;
+            const v = state[ti];
+            state[eidx]=v; state[ti]=null;
+            path.push(v);
+            const r = dfs(ti, g+1, eidx);
+            if(r==='FOUND') return 'FOUND';
+            if(r < min) min = r;
+            path.pop();
+            state[ti]=v; state[eidx]=null;
+          }
+          return min;
+        }
+        const t0 = Date.now();
+        while(true){
+          nodes=0;
+          const r = dfs(empty, 0, undefined);
+          if(r==='FOUND') return found;
+          if(r===Infinity || nodes>nodeCap) break;
+          threshold = r;
+          if(Date.now()-t0 > tCap) break;
+        }
+        return null;
+      }
+
+      // 4x4: আগের মতো 1-6 tiles
+      if(size === 4){
+        const working = startState.slice();
+        let allMoves = [];
+        const fixedIndices = new Set();
+        try{
+          for(let c=0; c<size; c++){
+            const targetVal = c+1;
+            const goalIdx = c;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 300000, 4000);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          for(let i=4;i<=5;i++){
+            const targetVal = i+1;
+            const goalIdx = i;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 200000, 3500);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          const restMoves = idaFull(working, 600000, 16000);
+          if(restMoves&&restMoves.length>0){
+            for(const mv of restMoves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            self.postMessage({type:'done', moves:allMoves, method:'4x4_stage2_ida'});
+            return;
+          }else{
+            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'4x4_stage2_fail'});
+            return;
+          }
+        }catch(e){
+          self.postMessage({type:'done', moves:null, method:'4x4_exception', error:String(e)});
+          return;
+        }
+      }
+      // 5x5: নতুন — উপরের ১২টা tile
+      if(size===5){
+        // stage1: 0..4(row1), 5..9(row2), 10,11 (row3 col1,2)
+        const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
+        const working = startState.slice();
+        let allMoves = [];
+        const fixedIndices = new Set();
+        try{
+          for(const i of st1idx){
+            const targetVal = i+1;
+            const goalIdx = i;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue;}
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 170000, 3000);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          // rest tiles classic
+          const restMoves = idaFull(working, 400000, 9000);
+          if(restMoves&&restMoves.length>0){
+            for(const mv of restMoves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'});
+            return;
+          }else{
+            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'});
+            return;
+          }
+        }catch(e){
+          self.postMessage({type:'done', moves:null, method:'5x5_exception', error:String(e)});
+          return;
+        }
+      }
+      // 3x3: classic
+      if(size<=3){
+        const moves = idaFull(startState);
+        self.postMessage({type:'done', moves:moves, method:'3x3_ida'});
+        return;
+      }
+      // fallback
+      const fallback = idaFull(startState, 150000, 7000);
+      self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
+    }catch(e){
+      self.postMessage({type:'done', moves:null, method:'worker_crash', error: String(e)});
+    }
+  };
+} // end worker function
+
+// create worker from function
+const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
+const workerUrl = URL.createObjectURL(workerBlob);
+let solverWorker = null;
+let solverRunning = false;
+let queuedMoves = [];
+
+/* ============================
+   START SOLVER with RTDB checks/saves
+   ============================ */
+
+async function startSolver(){
+  if(solverRunning) return;
+  if(gameContainer.classList.contains('hidden')) return;
+  solverRunning = true;
+  solveBtn.disabled = true;
+  gridEl.style.pointerEvents = 'none';
+  const snapshot = tiles.slice();
+
+  const key = encodeStateKey(snapshot);
+
+  // 1) size <= 4 -> check main RTDB first
+  if (size <= 4) {
+    try {
+      const found = await checkRTDBForSolution(size, key);
+      if (found && Array.isArray(found) && found.length) {
+        applyMovesSequence(found);
+        solverRunning = true;
+        return;
+      }
+    } catch (e) { console.warn('RTDB check error', e); }
+  }
+
+  // 2) size === 5 -> check all configured 5x5 RTDBs
+  if (size === 5) {
+    try {
+      const found5 = await checkAll5RTDBsForSolution(key);
+      if (found5 && Array.isArray(found5) && found5.length) {
+        applyMovesSequence(found5);
+        solverRunning = true;
+        return;
+      }
+    } catch (e) { console.warn('5x5 RTDB check error', e); }
+  }
+
+  // 3) Not in DB -> run worker; after result, save to appropriate RTDB(s)
+  solverWorker = new Worker(workerUrl);
+  solverWorker.onmessage = async function(ev){
+    const data = ev.data;
+    const moves = data.moves;
+    if(!moves){
+      solveBtn.disabled = false;
+      gridEl.style.pointerEvents = '';
+      solverRunning = false;
+      let msg = 'Solver failed or timed out.';
+      if(data && data.method){
+        if(data.method.startsWith('4x4_stage1_fail')) msg="৪×৪ puzzle: ১-৬ tile stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('4x4_stage2_fail')) msg="৪×৪ puzzle: শেষ stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('5x5_stage1_fail')) msg="৫×৫ puzzle: ১ম ১২টা tile stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('5x5_stage2_fail')) msg="৫×৫ puzzle: শেষ stage-এ আটকে গেছে!";
+        else msg = 'Solver could not finish (method: '+data.method+').';
+      }
+      alert(msg);
+      if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+      return;
+    }
+
+    // Save to DB(s)
+    try {
+      if (size <= 4) {
+        await saveToRTDB(size, key, moves, { method: data.method || 'worker' });
+      } else if (size === 5) {
+        await saveToAll5RTDBs(key, moves, { method: data.method || 'worker' });
+      }
+    } catch (e) {
+      console.warn('Save to RTDB(s) failed', e);
+    }
+
+    // apply moves
+    applyMovesSequence(moves);
+  };
+
+  solverWorker.postMessage({type:'solve', state: snapshot, size});
+}
+
+function stopSolverNow(){
+  if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+  solverRunning = false;
+  solveBtn.disabled = false;
+  gridEl.style.pointerEvents = '';
+  queuedMoves = [];
+}
+
+function applyMovesSequence(moves){
+  let i = 0;
+  queuedMoves = moves;
+  const delay = 340;
+  function step(){
+    if(i >= moves.length){
+      stopSolverNow();
+      if(isSolved(tiles)) modalOverlay.style.display = 'flex';
+      updateProgressBar();
+      return;
+    }
+    const val = moves[i];
+    const tile = [...gridEl.children].find(t => +t.dataset.number === val);
+    if(tile) tryMove(tile);
+    i++;
+    updateProgressBar();
+    setTimeout(step, delay);
+  }
+  setTimeout(step, 200);
+}
+
+solveBtn.addEventListener('click', startSolver);
+window.addEventListener('keydown', (e)=>{
+  if((e.key === 'b' || e.key === 'B') && !gameContainer.classList.contains('hidden')) startSolver();
+  if(e.key === 'Escape' && solverRunning) stopSolverNow();
+});
+
+window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
+
+/* --- Typing effect for status --- */
+(function(){
+  const subTextEl = document.getElementById('thinking-subtext');
+  const messages = [
+    'Analyzing with Python simulation...',
+    'Evaluating heuristics...',
+    'Running Minimax algorithm...',
+    'Performing Monte-Carlo simulations...',
+    'Checking board states...',
+    'Detecting chains and loops...',
+    'Applying corner and edge heuristics...',
+    'Assessing sacrifice moves...',
+    'Generating probabilistic outcomes...',
+    'Optimizing move selection...',
+    'Calculating risk factors...',
+    'Scanning for traps...',
+    'Validating opponent\'s options...',
+    'Updating strategy matrix...',
+    'Preparing final move...',
+    'Almost done...',
+    'Move ready to execute!',
+    'বট কাজ করছে... একটু অপেক্ষা করুন!',
+    'Solver বুদ্ধি খাটাচ্ছে...',
+    'পাজেল বিশ্লেষণ হচ্ছে...'
+  ];
+  let idx = 0;
+  function typeEffect(text, element, delay=40) {
+    return new Promise((resolve) => {
+      element.textContent = '';
+      let i = 0;
+      function typeChar() {
+        if(i < text.length) {
+          element.textContent += text.charAt(i);
+          i++;
+          setTimeout(typeChar, delay);
+        } else {
+          setTimeout(resolve, 1100);
+        }
+      }
+      typeChar();
+    });
+  }
+  async function loopMessages() {
+    while(true) {
+      await typeEffect(messages[idx], subTextEl);
+      idx = (idx + 1) % messages.length;
+    }
+  }
+  loopMessages();
+})();
+
+</script>
+</body>
+</html>
