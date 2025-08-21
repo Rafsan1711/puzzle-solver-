@@ -3,34 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sliding Puzzle — Solver (Extended: many libs & algorithms + RTDB PDB)</title>
+  <title>Sliding Puzzle — Solver (Fixed + Pattern DB)</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Firebase (compat because the original used compat) -->
+  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-database-compat.js"></script>
 
-  <!-- Extra algorithm / utility / worker libs (10+ as requested earlier) -->
+  <!-- Utility libs (kept for client-side use; worker does NOT depend on them) -->
   <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fastpriorityqueue@0.7.2/FastPriorityQueue.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/workerpool@6.4.0/dist/workerpool.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tinyqueue@2.0.3/tinyqueue.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/heap-js@2.5.0/dist/heap-js.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/async@3.2.5/dist/async.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/uuid@9.0.1/dist/umd/uuidv4.min.js"></script>
-  <!-- additional popular libs that might be useful -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.8.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pathfinding@0.4.18/PathFinding.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/ramda@0.28.0/dist/ramda.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/seedrandom@3.0.5/seedrandom.min.js"></script>
 
   <style>
-    /* ----------------- আগের CSS অপরিবর্তিত (kept visual intent similar) ----------------- */
     body { background:#0d1117; color:#c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     #homeScreen,#gameContainer { background:#161b22cc; box-shadow:0 8px 24px rgba(12,17,23,0.6); }
     #toggleSlider { background:#238636; }
@@ -55,69 +42,27 @@
     #modal h2 { font-size:2rem; margin-bottom:1rem; color:#58a6ff; }
     #modal button { margin-top:1rem; padding:0.75rem 1.5rem; background:#238636; color:white; border:none; border-radius:0.5rem; font-size:1rem; cursor:pointer; transition:background 0.2s; }
     #modal button:hover { background:#2ea043; }
-    #controls { width:100%; max-width:40rem; margin-top:36px; display:none; justify-content:center; gap:12px; align-items:center; }
+    #controls { width:100%; max-width:40rem; margin-top:36px; display:none; justify-content:center; gap:12px; align-items:center; flex-direction:column; }
     #solveBtn {
       padding:0.72rem 1.2rem; border-radius:0.75rem; font-size:1.05rem; font-weight:700;
       cursor:pointer; background:#16a34a; color:white; border:none; box-shadow:0 8px 20px rgba(0,0,0,0.6);
       transition: background .15s, transform .08s;
     }
+    .smallBtn {
+      padding:0.45rem .8rem; border-radius:.6rem; background:#0b1220; color:#dbeafe; border:1px solid #1f2937; cursor:pointer; font-weight:600;
+    }
     #solveBtn:hover{ background:#169e43; transform:translateY(-2px); }
     #solveBtn:disabled{ background:#285c38; cursor:not-allowed; opacity:.85; transform:translateY(0); }
     @media (max-width:640px){ #controls{ padding:0 12px; margin-top:26px; } #solveBtn{ width:90%; } }
     #thinkingSmall { display:block; margin-top:6px; font-size:0.85em; color:#ddd; }
-    #thinking-container {
-      max-width: 360px;
-      margin: 20px auto 40px auto;
-      padding: 18px 22px;
-      background-color: #202124;
-      border-radius: 14px;
-      box-shadow:0 0 0 1px rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.4);
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      color: #e8eaed;
-      user-select: none;
-    }
-    #thinking-text {
-      font-size: 1.3rem;
-      font-weight: 600;
-      position: relative;
-      overflow: hidden;
-      display: inline-block;
-      white-space: nowrap;
-      background: linear-gradient(90deg,#e8eaed 20%,#121212 40%,#e8eaed 60%);
-      background-repeat: no-repeat;
-      background-size: 200% 100%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: shine-slide 2.5s linear infinite;
-    }
-    @keyframes shine-slide {
-      0% { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
-    #thinking-subtext {
-      margin-top: 12px;
-      font-style: italic;
-      font-weight: 400;
-      color: #c7c7c7;
-      min-height: 26px;
-      font-size: 1rem;
-      white-space: nowrap;
-    }
-    #progressBarWrap {
-      width:100%; max-width:34rem; margin:20px auto 0 auto;
-      background:#23272e; border-radius:0.7rem; height:1.2rem; box-shadow:0 2px 8px #0005;
-      overflow:hidden; position:relative;
-    }
-    #progressBar {
-      height:100%; background:linear-gradient(90deg,#238636,#58a6ff);
-      width:0%; transition:width 0.5s;
-    }
-    #progressText {
-      position:absolute; left:0; right:0; top:0; bottom:0; display:flex;
-      align-items:center; justify-content:center; font-size:.98rem; color:#fff; font-weight:700;
-      text-shadow:0 2px 8px #0009;
-      pointer-events:none;
-    }
+    #thinking-container { max-width: 360px; margin: 20px auto 40px auto; padding: 18px 22px; background-color: #202124; border-radius: 14px; box-shadow:0 0 0 1px rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.4); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #e8eaed; user-select: none; }
+    #thinking-text { font-size: 1.3rem; font-weight: 600; position: relative; overflow: hidden; display: inline-block; white-space: nowrap; background: linear-gradient(90deg,#e8eaed 20%,#121212 40%,#e8eaed 60%); background-repeat: no-repeat; background-size: 200% 100%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shine-slide 2.5s linear infinite; }
+    @keyframes shine-slide { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    #thinking-subtext { margin-top: 12px; font-style: italic; font-weight: 400; color: #c7c7c7; min-height: 26px; font-size: 1rem; white-space: nowrap; }
+    #progressBarWrap { width:100%; max-width:34rem; margin:20px auto 0 auto; background:#23272e; border-radius:0.7rem; height:1.2rem; box-shadow:0 2px 8px #0005; overflow:hidden; position:relative; }
+    #progressBar { height:100%; background:linear-gradient(90deg,#238636,#58a6ff); width:0%; transition:width 0.5s; }
+    #progressText { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:.98rem; color:#fff; font-weight:700; text-shadow:0 2px 8px #0009; pointer-events:none; }
+    #pdbProgress { font-size:.9rem; color:#cbd5e1; margin-top:.6rem; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-6">
@@ -155,6 +100,15 @@
     <div id="thinkingSmall" aria-hidden="true"></div>
     <div id="winner-message"></div>
     <div id="game-board"></div>
+
+    <div class="flex gap-2">
+      <button id="buildPdbBtn" class="smallBtn" title="Build local small PDB (3x3)">Build PDB (3×3 small)</button>
+      <button id="importPdbBtn" class="smallBtn" title="Import PDB from main RTDB">Import PDB from RTDB</button>
+      <button id="exportSampleBtn" class="smallBtn" title="Export current sample to RTDB">Export Sample</button>
+    </div>
+
+    <div id="pdbProgress"></div>
+
     <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
       <div id="thinking-text">Solving With Stages...</div>
       <div id="thinking-subtext"></div>
@@ -174,8 +128,6 @@
 <script>
 /* ============================
    FIREBASE Realtime DB SETUP
-   (3x3 & 4x4 => main; 5x5 => each of the 3 configured RTDBs)
-   Make sure your database rules allow reads/writes for testing.
    ============================ */
 const RTDB_MAIN_CONFIG = {
   apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
@@ -222,7 +174,12 @@ const RTDB_5x5_CONFIGS = [
 let mainApp = null;
 let mainDb = null;
 try {
-  mainApp = firebase.initializeApp(RTDB_MAIN_CONFIG);
+  // avoid double-init errors if script runs twice
+  if (!firebase.apps || !firebase.apps.length) {
+    mainApp = firebase.initializeApp(RTDB_MAIN_CONFIG);
+  } else {
+    try { mainApp = firebase.app(); } catch(e){ mainApp = firebase.initializeApp(RTDB_MAIN_CONFIG); }
+  }
   mainDb = firebase.database();
   console.log('Main RTDB initialized.');
 } catch (e) {
@@ -233,7 +190,9 @@ const rtdb5Apps = [];
 for (let i = 0; i < RTDB_5x5_CONFIGS.length; i++) {
   try {
     const name = 'rtdb5_' + (i+1);
-    const app = firebase.initializeApp(RTDB_5x5_CONFIGS[i], name);
+    // if already initialized with same name, reuse
+    let app;
+    try { app = firebase.app(name); } catch(e) { app = firebase.initializeApp(RTDB_5x5_CONFIGS[i], name); }
     const db = firebase.database(app);
     rtdb5Apps.push({ app, db });
     console.log('Initialized 5x5 RTDB app:', name);
@@ -243,11 +202,10 @@ for (let i = 0; i < RTDB_5x5_CONFIGS.length; i++) {
 }
 
 /* ============================
-   Helpers: encode, deterministic 5x5 scramble, caches
+   Helpers: encode, scramble, caches
    ============================ */
 
 function encodeStateKey(arr) {
-  // compact key: comma separated, 0 for empty
   return arr.map(v => v === null ? '0' : String(v)).join(',');
 }
 
@@ -256,7 +214,6 @@ function deterministicScramble5x5() {
   const arr = [];
   for (let i = 1; i <= n*n - 1; i++) arr.push(i);
   arr.push(null); // solved
-  // fixed deterministic pattern
   const seq = 'LLURRDLURDLURRDLUURRDLURDLURRDLU'.split('');
   let empty = arr.indexOf(null);
   function rc(idx){ return {r: Math.floor(idx/n), c: idx % n}; }
@@ -278,12 +235,8 @@ function deterministicScramble5x5() {
   return arr;
 }
 
-const solutionCacheRTDB = new Map();   // key: size + '|' + key -> moves array
-const solutionCache5RTDBs = new Map(); // key -> moves
-
-/* ============================
-   DB helpers: check & save (with logging)
-   ============================ */
+const solutionCacheRTDB = new Map();
+const solutionCache5RTDBs = new Map();
 
 async function checkRTDBForSolution(size, key) {
   if (!mainDb) {
@@ -350,7 +303,7 @@ async function saveToAll5RTDBs(key, moves, meta = {}) {
 }
 
 /* ============================
-   Original UI & solver code (kept unchanged where possible)
+   UI + original logic (kept behavior)
    ============================ */
 
 const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
@@ -364,7 +317,12 @@ const modalOverlay = document.getElementById('modalOverlay');
 const closeModal = document.getElementById('closeModal');
 const controls = document.getElementById('controls');
 const solveBtn = document.getElementById('solveBtn');
-// Progress bar
+const buildPdbBtn = document.getElementById('buildPdbBtn');
+const importPdbBtn = document.getElementById('importPdbBtn');
+const exportSampleBtn = document.getElementById('exportSampleBtn');
+const pdbProgress = document.getElementById('pdbProgress');
+const thinkingSubtext = document.getElementById('thinking-subtext');
+
 const progressBarWrap = document.getElementById('progressBarWrap');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
@@ -524,32 +482,70 @@ function updateProgressBar(){
   if(perc===100) progressText.textContent = "🎉 Puzzle Solved!";
 }
 
-/* ----------- Worker-based multi-stage hybrid solver -----------
-   Now: extended to include many algorithms: A*, bidirectional, IDA*,
-   Genetic Algorithm, Monte Carlo Tree Search, Greedy Best-First,
-   Simulated Annealing, Beam Search, Hill Climbing, BFS, DFS,
-   and Pattern-Database heuristic integration via RTDB lookups.
-   All heavy computation runs inside this worker to avoid browser freeze.
-*/
+/* ============================
+   Worker code (self-contained) - no external lib dependency
+   ============================ */
 
 function solverWorkerFunction(){
-  // inside worker scope
-  // we'll define many algorithms and heuristics here
+  // Small binary min-heap / priority queue
+  class MinHeap {
+    constructor(compare) { this.data = []; this.c = compare || ((a,b)=>a-b); }
+    size(){ return this.data.length; }
+    isEmpty(){ return this.data.length === 0; }
+    peek(){ return this.data[0]; }
+    add(item){
+      this.data.push(item);
+      this._siftUp(this.data.length-1);
+    }
+    poll(){
+      if(this.data.length === 0) return undefined;
+      const top = this.data[0];
+      const last = this.data.pop();
+      if(this.data.length) { this.data[0] = last; this._siftDown(0); }
+      return top;
+    }
+    _siftUp(i){
+      let idx=i;
+      const item = this.data[idx];
+      while(idx>0){
+        const p = Math.floor((idx-1)/2);
+        if(this.c(this.data[p], item) <= 0) break;
+        this.data[idx] = this.data[p];
+        idx = p;
+      }
+      this.data[idx] = item;
+    }
+    _siftDown(i){
+      const n = this.data.length;
+      let idx = i;
+      const item = this.data[idx];
+      while(true){
+        let left = idx*2+1;
+        let right = idx*2+2;
+        let smallest = idx;
+        if(left < n && this.c(this.data[left], this.data[smallest]) < 0) smallest = left;
+        if(right < n && this.c(this.data[right], this.data[smallest]) < 0) smallest = right;
+        if(smallest === idx) break;
+        this.data[idx] = this.data[smallest];
+        idx = smallest;
+      }
+      this.data[idx] = item;
+    }
+  }
+
   self.onmessage = function(ev){
     try{
       const {type, state, size, options} = ev.data;
       if(type !== 'solve') return;
       const startState = state.slice();
 
-      // utility
+      // helpers
       function idxToRC(i, n){ return {r: Math.floor(i/n), c: i % n}; }
       function rcToIdx(r,c,n){ return r*n + c; }
-
       const nsize = size;
       const goalPos = {};
       for(let v=1; v<=nsize*nsize-1; v++) goalPos[v] = idxToRC(v-1, nsize);
 
-      // Basic heuristics
       function manhattanUnfixed(arr, fixedSet){
         let s = 0;
         for(let i=0;i<arr.length;i++){
@@ -563,20 +559,17 @@ function solverWorkerFunction(){
       }
 
       function linearConflict(arr){
-        // approximate linear conflict heuristic for rows/cols
         let lc = 0;
         const n = nsize;
         for(let r=0;r<n;r++){
-          // check row
           const row = [];
           for(let c=0;c<n;c++) row.push(arr[rcToIdx(r,c,n)]);
-          // for each pair in row, if both belong to this row and are reversed, add 2
           for(let i=0;i<row.length;i++){
             for(let j=i+1;j<row.length;j++){
               const a=row[i], b=row[j];
               if(!a||!b) continue;
               const ga = goalPos[a], gb = goalPos[b];
-              if(ga.r===r && gb.r===r && ga.c > gb.c) lc+=2;
+              if(ga && gb && ga.r===r && gb.r===r && ga.c > gb.c) lc+=2;
             }
           }
         }
@@ -588,35 +581,31 @@ function solverWorkerFunction(){
               const a=col[i], b=col[j];
               if(!a||!b) continue;
               const ga = goalPos[a], gb = goalPos[b];
-              if(ga.c===c && gb.c===c && ga.r > gb.r) lc+=2;
+              if(ga && gb && ga.c===c && gb.c===c && ga.r > gb.r) lc+=2;
             }
           }
         }
         return lc;
       }
 
-      // Pattern database lookup (worker-side attempt) -- tries to look into precomputed small patterns passed via options
+      // pattern DB heuristic (uses options.patternDB if passed)
       function patternDBHeuristic(arr){
-        // options.patternDB can be an object mapping 'patternKey'->value
         try{
           if(!options || !options.patternDB) return 0;
-          // simple two-tile group pattern example (not full PDB) — sum of lookups
-          let s = 0;
-          const pat = options.patternDB;
-          // create a key for a subset: positions of tiles 1..k
-          const k = Math.min(Object.keys(pat).length>0?Object.keys(pat).length:0, 15);
-          // The worker will be provided with a patterns object in options; otherwise ignore
-          for(const pk in pat){
-            if(!pat.hasOwnProperty(pk)) continue;
-            // if arr matches pattern key partially, use value
-            if(pk === 'all') { s += pat[pk]; }
+          const pdbObj = options.patternDB; // { tiles: [..], map: {key->dist} }
+          if(!pdbObj.tiles || !pdbObj.map) return 0;
+          const keyParts = [];
+          for(const t of pdbObj.tiles){
+            const pos = arr.indexOf(t);
+            keyParts.push(pos >= 0 ? String(pos) : '-1');
           }
-          return s;
+          const key = keyParts.join('|');
+          const v = pdbObj.map[key];
+          return typeof v === 'number' ? v : 0;
         }catch(e){ return 0; }
       }
 
       function combinedHeuristic(arr, fixedSet){
-        // combine manhattan + linear conflict + patternDB
         const m = manhattanUnfixed(arr, fixedSet);
         const lc = linearConflict(arr);
         const pdb = patternDBHeuristic(arr);
@@ -634,9 +623,7 @@ function solverWorkerFunction(){
         return res;
       }
 
-      /* ----------------
-         IDA* placement (already present) - kept and slightly extended
-         ---------------- */
+      // IDA*, BFS, A* etc reimplemented but without external PQ
       function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=300000, tCap=5000){
         const state = currentState.slice();
         let empty = state.indexOf(null);
@@ -655,7 +642,7 @@ function solverWorkerFunction(){
           let min=Infinity;
           const neigh = neighborsOfEmpty(eidx);
           const order = neigh.map(idx=>{
-            if(fixedSet.has(idx)) return {idx, hv2: 1e9};
+            if(fixedSet && fixedSet.has(idx)) return {idx, hv2: 1e9};
             const val = state[idx];
             state[eidx]=val; state[idx]=null;
             const hv2 = manhattanUnfixed(state, fixedSet);
@@ -665,7 +652,7 @@ function solverWorkerFunction(){
           for(const o of order){
             const ti = o.idx;
             if(prev !== undefined && ti === prev) continue;
-            if(fixedSet.has(ti)) continue;
+            if(fixedSet && fixedSet.has(ti)) continue;
             const v = state[ti];
             state[eidx] = v; state[ti] = null;
             path.push(v);
@@ -689,9 +676,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         BFS placement
-         ---------------- */
       function bfsPlaceTile(currentState, fixedSet, targetVal, targetGoalIdx){
         const start = currentState.slice();
         const startEmpty = start.indexOf(null);
@@ -711,7 +695,7 @@ function solverWorkerFunction(){
           if(node.path.length >= maxDepth) continue;
           const neigh = neighborsOfEmpty(node.empty);
           for(const idx of neigh){
-            if(fixedSet.has(idx)) continue;
+            if(fixedSet && fixedSet.has(idx)) continue;
             const newA = node.arr.slice();
             newA[node.empty] = newA[idx];
             newA[idx] = null;
@@ -725,9 +709,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         A* (general solver) - uses combined heuristic
-         ---------------- */
       function aStarSolve(initialState, nodeLimit=500000, timeLimit=15000){
         const startKey = initialState.map(x=>x===null?0:x).join(',');
         const n = nsize;
@@ -736,7 +717,12 @@ function solverWorkerFunction(){
         goalArr.push(null);
         const goalKey = goalArr.map(x=>x===null?0:x).join(',');
         if(startKey === goalKey) return [];
-        const open = new FastPriorityQueue((a,b)=>a.f < b.f);
+        const compare = (A,B) => {
+          if(A.f < B.f) return -1;
+          if(A.f > B.f) return 1;
+          return 0;
+        };
+        const open = new MinHeap((a,b)=> (a.f - b.f));
         const cameFrom = new Map();
         const gScore = new Map();
         function keyOf(arr){ return arr.map(x=>x===null?0:x).join(','); }
@@ -752,7 +738,6 @@ function solverWorkerFunction(){
           nodes++;
           const curKey = keyOf(cur.arr);
           if(curKey === goalKey){
-            // reconstruct moves
             const moves = [];
             let k = curKey;
             while(cameFrom.has(k)){
@@ -783,9 +768,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         Bidirectional BFS (for short path hints)
-         ---------------- */
       function bidirectionalSearch(initialState, timeLimit=8000){
         const start = initialState.slice();
         const goal = [];
@@ -806,12 +788,10 @@ function solverWorkerFunction(){
         let nodes = 0;
         while(qA.length && qB.length){
           if(Date.now() - startTime > timeLimit) break;
-          // expand smaller frontier
           if(qA.length <= qB.length){
             const node = qA.shift(); nodes++;
             const nodeKey = key(node.arr);
             if(frontB.has(nodeKey)){
-              // merge
               const pathA = node.path;
               const pathB = frontB.get(nodeKey);
               return pathA.concat(pathB.slice().reverse());
@@ -852,11 +832,8 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         Greedy Best-First
-         ---------------- */
       function greedyBestFirst(initialState, timeLimit=6000){
-        const open = new FastPriorityQueue((a,b)=>a.h < b.h);
+        const open = new MinHeap((a,b)=> a.h - b.h);
         const keyOf = a => a.map(x=>x===null?0:x).join(',');
         open.add({arr: initialState.slice(), empty: initialState.indexOf(null), h: combinedHeuristic(initialState, new Set()), path: []});
         const seen = new Set();
@@ -883,21 +860,17 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         Simulated Annealing (stochastic improvement)
-         ---------------- */
       function simulatedAnnealing(initialState, maxIter=6000, startTemp=10.0){
         let best = initialState.slice();
         let cur = initialState.slice();
         let empty = cur.indexOf(null);
-        function score(s){ return -combinedHeuristic(s, new Set()); } // higher is better
+        function score(s){ return -combinedHeuristic(s, new Set()); }
         let bestScore = score(best);
         let curScore = bestScore;
         const rand = Math.random;
         for(let t=1;t<=maxIter;t++){
           const neigh = neighborsOfEmpty(empty);
           const pick = neigh[Math.floor(rand()*neigh.length)];
-          // move
           const newA = cur.slice();
           newA[empty] = newA[pick]; newA[pick] = null;
           const newScore = score(newA);
@@ -908,27 +881,22 @@ function solverWorkerFunction(){
           }
           if(bestScore === 0) break;
         }
-        // reconstruct simple path from initial to best by greedy steps (approx)
         const path = greedyBestFirst(best, 2000);
         return path;
       }
 
-      /* ----------------
-         Genetic Algorithm (operates on sequences of moves as chromosomes)
-         ---------------- */
-      function geneticSolve(initialState, popSize=60, genLimit=150, seqLen=80){
-        // chromosome: sequence of moves (tile numbers); evaluation = -combinedHeuristic(after applying seq)
+      function geneticSolve(initialState, popSize=40, genLimit=80, seqLen=60){
         function applySeq(arr, seq){
           const a = arr.slice();
           for(const mv of seq){
             const tileIdx = a.indexOf(mv);
             const emptyIdx = a.indexOf(null);
+            if(tileIdx < 0 || emptyIdx < 0) continue;
             const r1 = Math.floor(tileIdx/nsize), c1 = tileIdx%nsize;
             const r2 = Math.floor(emptyIdx/nsize), c2 = emptyIdx%nsize;
             const adj = (r1===r2 && Math.abs(c1-c2)===1) || (c1===c2 && Math.abs(r1-r2)===1);
             if(adj){ a[emptyIdx] = a[tileIdx]; a[tileIdx] = null; }
             else {
-              // invalid move: try to move a random neighbor instead
               const neigh = neighborsOfEmpty(emptyIdx);
               const t = neigh[0]; a[emptyIdx] = a[t]; a[t]=null;
             }
@@ -938,35 +906,29 @@ function solverWorkerFunction(){
         function randSeq(){
           const seq = [];
           for(let i=0;i<seqLen;i++){
-            const possible = [];
             const e = initialState.indexOf(null);
             const neigh = neighborsOfEmpty(e);
-            for(const idx of neigh) possible.push(initialState[idx]);
-            if(possible.length===0) possible.push(1);
-            seq.push(possible[Math.floor(Math.random()*possible.length)]);
+            const possible = neigh.map(idx => initialState[idx]);
+            seq.push(possible.length?possible[Math.floor(Math.random()*possible.length)]:1);
           }
           return seq;
         }
         let population = [];
         for(let i=0;i<popSize;i++) population.push(randSeq());
         for(let gen=0;gen<genLimit;gen++){
-          // evaluate
           const scored = population.map(ch => {
             const res = applySeq(initialState, ch);
             const fitness = -combinedHeuristic(res, new Set());
             return {ch,fitness};
           }).sort((a,b)=>b.fitness-a.fitness);
           if(scored[0].fitness === 0) return scored[0].ch;
-          // select top 20
           const elites = scored.slice(0, Math.max(4, Math.floor(popSize*0.2))).map(s=>s.ch);
           const newPop = elites.slice();
           while(newPop.length < popSize){
             const p1 = elites[Math.floor(Math.random()*elites.length)];
             const p2 = elites[Math.floor(Math.random()*elites.length)];
-            // crossover
             const cx = Math.floor(Math.random()*seqLen);
             const child = p1.slice(0,cx).concat(p2.slice(cx));
-            // mutate
             if(Math.random() < 0.15){
               const mi = Math.floor(Math.random()*seqLen);
               child[mi] = child[Math.floor(Math.random()*seqLen)];
@@ -975,15 +937,11 @@ function solverWorkerFunction(){
           }
           population = newPop;
         }
-        // return best found
         const finalScore = population.map(ch=>({ch,fitness:-combinedHeuristic(applySeq(initialState,ch), new Set())})).sort((a,b)=>b.fitness-a.fitness)[0];
         return finalScore ? finalScore.ch : null;
       }
 
-      /* ----------------
-         Monte Carlo Tree Search (very simple playout-based)
-         ---------------- */
-      function mctsSolve(initialState, sims=800){
+      function mctsSolve(initialState, sims=600){
         function randomPlayout(state, depthLimit=60){
           const s = state.slice();
           for(let d=0;d<depthLimit;d++){
@@ -995,14 +953,12 @@ function solverWorkerFunction(){
           }
           return {solved:false};
         }
-        // generate candidates from one move
         const e = initialState.indexOf(null);
         const neigh = neighborsOfEmpty(e);
         const actions = neigh.map(idx=>initialState[idx]);
         const stats = actions.map(a=>({a, wins:0, plays:0}));
         for(let i=0;i<sims;i++){
           const pick = stats[Math.floor(Math.random()*stats.length)];
-          // apply move
           const st = initialState.slice();
           const ti = st.indexOf(pick);
           const ei = st.indexOf(null);
@@ -1010,24 +966,19 @@ function solverWorkerFunction(){
           const res = randomPlayout(st, 40);
           pick.plays++; if(res.solved) pick.wins++;
         }
-        // choose best
         stats.sort((a,b)=> (b.wins/b.plays || 0) - (a.wins/a.plays || 0));
-        // return sequence starting with best action then greedy
         const first = stats.length?stats[0].a:null;
         if(!first) return null;
-        // now try greedy from that state
         const s2 = initialState.slice();
         const ti = s2.indexOf(first);
         const ei = s2.indexOf(null);
+        if(ti<0||ei<0) return null;
         s2[ei] = s2[ti]; s2[ti] = null;
         const path = greedyBestFirst(s2, 8000);
         if(path) return [first].concat(path);
         return null;
       }
 
-      /* ----------------
-         Beam Search (limited width)
-         ---------------- */
       function beamSearch(initialState, width=8, depth=40){
         let beam = [{arr: initialState.slice(), empty: initialState.indexOf(null), path: [], score: combinedHeuristic(initialState, new Set())}];
         for(let d=0;d<depth;d++){
@@ -1048,9 +999,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      /* ----------------
-         Hill Climbing (greedy local ascent)
-         ---------------- */
       function hillClimb(initialState, iter=2000){
         let cur = initialState.slice();
         let e = cur.indexOf(null);
@@ -1065,15 +1013,11 @@ function solverWorkerFunction(){
           if(!best) break;
           if(bestScore >= combinedHeuristic(cur, new Set())) break;
           cur = best.arr; e = best.empty;
-          if(bestScore===0) return []; // we reached goal but no moves recorded
+          if(bestScore===0) return [];
         }
-        // try greedy solver from cur
         return greedyBestFirst(cur, 3000);
       }
 
-      /* ----------------
-         DFS depth-limited (used as fallback)
-         ---------------- */
       function depthLimitedDFS(initialState, limit=50){
         const start = initialState.slice();
         const seen = new Set();
@@ -1090,47 +1034,35 @@ function solverWorkerFunction(){
         return found;
       }
 
-      /* ----------------
-         Top-level orchestration: try a sequence of algorithms with small timecaps
-         ---------------- */
       (async function orchestrate(){
         try{
-          // Try quick cheap heuristics first
           const attemptOrder = [
-            {fn: (s)=>{ return bidirectionalSearch(s, 5000); }, name:'bidirectional', cap:5000},
-            {fn: (s)=>{ return greedyBestFirst(s, 3500); }, name:'greedy', cap:3500},
-            {fn: (s)=>{ return beamSearch(s, 10, 30); }, name:'beam', cap:4000},
-            {fn: (s)=>{ return simulatedAnnealing(s, 3000); }, name:'anneal', cap:5000},
-            {fn: (s)=>{ return hillClimb(s, 1500); }, name:'hill', cap:3000},
-            {fn: (s)=>{ return aStarSolve(s, 300000, 7000); }, name:'astar', cap:8000},
-            {fn: (s)=>{ return idaFull(s, 800000, 20000); }, name:'ida', cap:22000},
-            {fn: (s)=>{ return geneticSolve(s, 50, 120, 70); }, name:'genetic', cap:15000},
-            {fn: (s)=>{ return mctsSolve(s, 600); }, name:'mcts', cap:8000},
-            {fn: (s)=>{ return depthLimitedDFS(s, 40); }, name:'dfs', cap:5000}
+            {fn: (s)=>{ return bidirectionalSearch(s, 5000); }, name:'bidirectional'},
+            {fn: (s)=>{ return greedyBestFirst(s, 3500); }, name:'greedy'},
+            {fn: (s)=>{ return beamSearch(s, 12, 30); }, name:'beam'},
+            {fn: (s)=>{ return simulatedAnnealing(s, 3000); }, name:'anneal'},
+            {fn: (s)=>{ return hillClimb(s, 1500); }, name:'hill'},
+            {fn: (s)=>{ return aStarSolve(s, 300000, 7000); }, name:'astar'},
+            {fn: (s)=>{ return idaFull(s, 800000, 20000); }, name:'ida'},
+            {fn: (s)=>{ return geneticSolve(s, 40, 80, 60); }, name:'genetic'},
+            {fn: (s)=>{ return mctsSolve(s, 500); }, name:'mcts'},
+            {fn: (s)=>{ return depthLimitedDFS(s, 40); }, name:'dfs'}
           ];
 
-          // If options specify algorithm preference, push it first
           if(options && options.prefer && options.prefer.length){
-            // reorder attemptOrder to put preferred at start
             attemptOrder.sort((a,b)=>{ const ai = options.prefer.indexOf(a.name); const bi = options.prefer.indexOf(b.name); if(ai===-1) return 1; if(bi===-1) return -1; return ai-bi; });
           }
 
           for(const at of attemptOrder){
-            // small delay to allow message processing
             const result = at.fn(startState);
             if(result && Array.isArray(result) && result.length>0){
               self.postMessage({type:'done', moves:result, method: 'worker_'+at.name});
               return;
             }
-            // if result is null continue
           }
 
-          // as final fallback try full staged approach similar to original (3x3, 4x4, 5x5 specialized)
           if(nsize === 4){
-            // Reuse original staged 4x4 logic here (simplified)
-            const working = startState.slice();
-            let allMoves = [];
-            const fixedIndices = new Set();
+            const working = startState.slice(); let allMoves = []; const fixedIndices = new Set();
             for(let c=0;c<nsize;c++){
               const targetVal = c+1; const goalIdx = c;
               if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
@@ -1146,9 +1078,7 @@ function solverWorkerFunction(){
           }
 
           if(nsize === 5){
-            const working = startState.slice();
-            let allMoves = [];
-            const fixedIndices = new Set();
+            const working = startState.slice(); let allMoves = []; const fixedIndices = new Set();
             for(let idxTile = 0; idxTile < 15; idxTile++){
               const targetVal = idxTile + 1; const goalIdx = idxTile;
               if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
@@ -1163,16 +1093,13 @@ function solverWorkerFunction(){
             if(restMoves && restMoves.length > 0){ for(const mv of restMoves){ const fromIdx = working.indexOf(mv); const eIdx = working.indexOf(null); working[eIdx] = mv; working[fromIdx] = null; allMoves.push(mv);} self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'}); return; } else { self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'}); return; }
           }
 
-          // 3x3
           if(nsize<=3){ const moves = idaFull(startState); self.postMessage({type:'done', moves:moves, method:'3x3_ida'}); return; }
 
-          // fallback
           const fallback = idaFull(startState, 150000, 7000);
           self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
         }catch(e){ self.postMessage({type:'done', moves:null, method:'orchestrate_exception', error: String(e)}); }
       })();
 
-      // IDA* full (copied here because used by orchestrate internals)
       function idaFull(initial, nodeCap=1000000, tCap=20000){
         const state = initial.slice();
         let empty = state.indexOf(null);
@@ -1222,14 +1149,13 @@ function solverWorkerFunction(){
         }
         return null;
       }
-
     }catch(e){
       self.postMessage({type:'done', moves:null, method:'worker_crash', error: String(e)});
     }
   };
 } // end worker function
 
-// create worker once
+// worker blob creation
 const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
 const workerUrl = URL.createObjectURL(workerBlob);
 
@@ -1238,7 +1164,7 @@ let solverRunning = false;
 let queuedMoves = [];
 
 /* ============================
-   START SOLVER with RTDB checks/saves + multi-algo orchestration
+   Solver start / stop + RTDB integration
    ============================ */
 
 async function startSolver(){
@@ -1250,7 +1176,6 @@ async function startSolver(){
   const snapshot = tiles.slice();
   const key = encodeStateKey(snapshot);
 
-  // 1) size <= 4 -> check main RTDB first
   if (size <= 4) {
     try {
       const found = await checkRTDBForSolution(size, key);
@@ -1262,7 +1187,6 @@ async function startSolver(){
     } catch (e) { console.warn('RTDB check error', e); }
   }
 
-  // 2) size === 5 -> check all configured 5x5 RTDBs
   if (size === 5) {
     try {
       const found5 = await checkAll5RTDBsForSolution(key);
@@ -1274,13 +1198,11 @@ async function startSolver(){
     } catch (e) { console.warn('5x5 RTDB check error', e); }
   }
 
-  // 3) Not in DB -> run worker; after result, save to appropriate RTDB(s)
   solverWorker = new Worker(workerUrl);
   solverWorker.onmessage = async function(ev){
     const data = ev.data;
     const moves = data.moves;
     if(!moves){
-      // solver returned null / failed; no auto-reload — inform user and allow retry
       solveBtn.disabled = false;
       gridEl.style.pointerEvents = '';
       solverRunning = false;
@@ -1299,7 +1221,6 @@ async function startSolver(){
       return;
     }
 
-    // Save to DB(s) asynchronously but don't block UI application of moves
     (async ()=>{
       try {
         if (size <= 4) {
@@ -1312,16 +1233,21 @@ async function startSolver(){
       }
     })();
 
-    // apply moves
     applyMovesSequence(moves);
-    // terminate worker once job is dispatched
     try { solverWorker.terminate(); } catch(e){}
     solverWorker = null;
   };
 
-  // send options: attempt to include a tiny patternDB object (if available locally in clientStorage)
+  // include local patternDB if present
   let options = { prefer: ['astar','ida','greedy'] };
-  try{ const localPDB = window.localStorage.getItem('pdb_'+size); if(localPDB) options.patternDB = JSON.parse(localPDB); }catch(e){}
+  try{
+    const localPDB = window.localStorage.getItem('pdb_'+size);
+    if(localPDB){
+      const obj = JSON.parse(localPDB);
+      // ensure structure: {tiles: [...], map: {key:dist}}
+      if(obj && obj.tiles && obj.map) options.patternDB = obj;
+    }
+  }catch(e){ console.warn('pdb parse failed', e); }
 
   solverWorker.postMessage({type:'solve', state: snapshot, size, options});
 }
@@ -1363,33 +1289,22 @@ window.addEventListener('keydown', (e)=>{
 
 window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
 
-/* --- Typing effect for status (unchanged) --- */
+/* --- Typing effect for status --- */
 (function(){
-  const subTextEl = document.getElementById('thinking-subtext');
+  const subTextEl = thinkingSubtext;
   const messages = [
-    'Analyzing with Python simulation...',
+    'Analyzing with simulations...',
     'Evaluating heuristics...',
-    'Running Minimax algorithm...',
-    'Performing Monte-Carlo simulations...',
+    'Running search algorithms...',
+    'Performing Monte-Carlo playouts...',
     'Checking board states...',
-    'Detecting chains and loops...',
-    'Applying corner and edge heuristics...',
-    'Assessing sacrifice moves...',
-    'Generating probabilistic outcomes...',
+    'Applying corner heuristics...',
     'Optimizing move selection...',
-    'Calculating risk factors...',
-    'Scanning for traps...',
-    'Validating opponent\'s options...',
-    'Updating strategy matrix...',
     'Preparing final move...',
-    'Almost done...',
-    'Move ready to execute!',
-    'বট কাজ করছে... একটু অপেক্ষা করুন!',
-    'Solver বুদ্ধি খাটাচ্ছে...',
-    'পাজেল বিশ্লেষণ হচ্ছে...'
+    'বট কাজ করছে...'
   ];
   let idx = 0;
-  function typeEffect(text, element, delay=40) {
+  function typeEffect(text, element, delay=24) {
     return new Promise((resolve) => {
       element.textContent = '';
       let i = 0;
@@ -1399,7 +1314,7 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
           i++;
           setTimeout(typeChar, delay);
         } else {
-          setTimeout(resolve, 1100);
+          setTimeout(resolve, 700);
         }
       }
       typeChar();
@@ -1414,27 +1329,108 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
   loopMessages();
 })();
 
-/*
-  Additional helpers for experimenting & debugging:
-  - exportStateToRTDB(size): push current arrangement to RTDB as sample
-  - importPatternDBFromRTDB(size): attempt to download pattern DB heuristics from the main RTDB and store in localStorage
-*/
+/* ============================
+   Pattern DB builder (3x3 small) + helpers
+   ============================ */
 
-async function exportStateToRTDB(){
-  if(!mainDb) return alert('No main RTDB configured');
-  const k = encodeStateKey(tiles);
-  const payload = { sample: tiles, createdAt: Date.now() };
-  try{ await mainDb.ref(`/samples/${size}/${encodeURIComponent(k)}`).set(payload); alert('Exported sample to RTDB'); }catch(e){ console.warn(e); alert('Export failed'); }
+function buildSmallPDB3x3(patternTiles = [1,2,3,4]) {
+  // Build PDB for 3x3 for given patternTiles subset.
+  // BFS from goal: store distance keyed by positions of pattern tiles (pos0|pos1|...)
+  return new Promise((resolve, reject) => {
+    pdbProgress.textContent = 'PDB build started...';
+    setTimeout(()=>{ // allow UI update
+      try {
+        const n = 3;
+        const goal = [];
+        for(let i=1;i<=n*n-1;i++) goal.push(i);
+        goal.push(null);
+        const goalKeyFull = goal.map(x=>x===null?0:x).join(',');
+        const q = [ {arr: goal.slice(), empty: 8, dist:0} ];
+        const seen = new Set();
+        seen.add(goalKeyFull);
+        const map = Object.create(null);
+        let processed = 0;
+        while(q.length){
+          const node = q.shift();
+          processed++;
+          // compute pattern key
+          const keyParts = patternTiles.map(t => String(node.arr.indexOf(t)));
+          const pkey = keyParts.join('|');
+          if(typeof map[pkey] !== 'number') map[pkey] = node.dist;
+          // expand
+          const e = node.empty;
+          const r = Math.floor(e/3), c = e%3;
+          const deltas=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+          for(const d of deltas){
+            const nr=r+d.dr, nc=c+d.dc;
+            if(nr<0||nr>=3||nc<0||nc>=3) continue;
+            const ni = nr*3 + nc;
+            const newA = node.arr.slice();
+            newA[e] = newA[ni]; newA[ni] = null;
+            const k = newA.map(x=>x===null?0:x).join(',');
+            if(seen.has(k)) continue;
+            seen.add(k);
+            q.push({arr:newA, empty: ni, dist: node.dist+1});
+          }
+          if(processed % 2000 === 0) {
+            pdbProgress.textContent = `Processed ${processed} states... (partial PDB size: ${Object.keys(map).length})`;
+          }
+        }
+        const pdbObj = { tiles: patternTiles.slice(), map };
+        window.localStorage.setItem('pdb_3', JSON.stringify(pdbObj));
+        pdbProgress.textContent = `PDB build finished. Entries: ${Object.keys(map).length}`;
+        resolve(pdbObj);
+      } catch(err) {
+        pdbProgress.textContent = 'PDB build error: ' + String(err);
+        reject(err);
+      }
+    }, 30);
+  });
 }
+
+buildPdbBtn.addEventListener('click', async ()=>{
+  buildPdbBtn.disabled = true;
+  pdbProgress.textContent = 'Building 3×3 small PDB (this may take a few seconds)...';
+  try{
+    const pdb = await buildSmallPDB3x3([1,2,3,4]);
+    console.log('Built pdb_3:', pdb);
+    pdbProgress.textContent = 'PDB built & saved to localStorage (key: pdb_3)';
+  }catch(e){
+    console.warn('PDB build failed', e);
+    pdbProgress.textContent = 'PDB build failed - check console';
+  } finally {
+    buildPdbBtn.disabled = false;
+  }
+});
 
 async function importPatternDBFromRTDB(sizeToLoad){
-  if(!mainDb) return console.warn('no maindb');
+  if(!mainDb) return alert('No main RTDB configured');
+  pdbProgress.textContent = 'Importing PDB from RTDB...';
   try{
     const snap = await mainDb.ref(`/patternDB/${sizeToLoad}`).once('value');
-    if(snap && snap.exists()){ const val = snap.val(); window.localStorage.setItem('pdb_'+sizeToLoad, JSON.stringify(val)); console.log('Imported patternDB to localStorage'); return val; }
-  }catch(e){ console.warn(e); }
+    if(snap && snap.exists()){
+      const val = snap.val();
+      window.localStorage.setItem('pdb_'+sizeToLoad, JSON.stringify(val));
+      pdbProgress.textContent = 'Imported patternDB to localStorage (pdb_'+sizeToLoad+')';
+      return val;
+    } else {
+      pdbProgress.textContent = 'No patternDB found on RTDB for size '+sizeToLoad;
+    }
+  }catch(e){ console.warn(e); pdbProgress.textContent = 'Import failed: see console'; }
   return null;
 }
+
+importPdbBtn.addEventListener('click', ()=> importPatternDBFromRTDB(size || 3));
+
+exportSampleBtn.addEventListener('click', async ()=>{
+  if(!mainDb) return alert('No main RTDB configured');
+  const k = encodeStateKey(tiles || []);
+  const payload = { sample: tiles, createdAt: Date.now(), size };
+  try{
+    await mainDb.ref(`/samples/${size}/${encodeURIComponent(k)}`).set(payload);
+    alert('Exported sample to RTDB');
+  }catch(e){ console.warn(e); alert('Export failed'); }
+});
 
 </script>
 </body>
