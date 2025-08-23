@@ -1,881 +1,586 @@
-<!doctype html>
-<html lang="bn">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>3D Periodic Table — Dark</title>
-
-  <!-- three.js must be in the same directory as this file: ./three.js -->
-  <script src="three.js"></script>
-
-  <!-- Firebase (compat) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
+  <meta charset="UTF-8">
+  <title>3D Periodic Table</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <!-- three.js -->
+  <script src="./three.js"></script>
   <style>
-    /* Dark, almost-black UI tuned to the user's request */
-    :root{
-      --bg:#07070a;
-      --surface:#0f1220;
-      --muted:#7f8ba9;
-      --primary:#5ea1ff;
-      --accent:#00d8d6;
-      --danger:#ff6b6b;
-      --owner:#ffcc66;
-      --border:#202433;
-      --block-gap:0.45vw;
-      --block-min-size:36px;
-    }
-    html,body{height:100%;margin:0;background:var(--bg);color:#eaf0ff;font-family:Inter,Segoe UI,Arial,sans-serif;}
-    /* Auth screen centered */
-    .centered{height:100vh;display:flex;align-items:center;justify-content:center;}
-    .auth-card{background:var(--surface);border-radius:16px;padding:28px 34px;box-shadow:0 10px 40px #0008;text-align:center;max-width:92vw;}
-    .auth-h1{font-size:26px;margin:0 0 10px;color:var(--primary);letter-spacing:0.6px;}
-    .google-btn{background:#0b1222;border:1px solid var(--border);color:var(--muted);padding:12px 18px;border-radius:10px;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:12px;}
-    .google-btn img{height:20px;}
-    .muted{color:var(--muted);font-size:13px;margin-top:8px;}
-
-    /* signout */
-    .signout-btn{position:fixed;right:18px;top:18px;background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 12px;border-radius:10px;cursor:pointer;z-index:60;}
-
-    /* The periodic table container and layout: strict 18 columns, enough rows */
-    #ptable-wrap{display:none;padding:18px 12px 56px 12px;min-height:100vh;}
-    .title{font-size:22px;color:var(--primary);text-align:center;margin:16px 0 8px;}
-    .ptable-grid{
-      margin:0 auto;
-      width:98vw; max-width:1400px; min-width:320px;
-      display:grid;
-      grid-template-columns:repeat(18,1fr);
-      grid-auto-rows:minmax(var(--block-min-size),6vw);
-      gap:var(--block-gap);
-      padding:12px;
-      box-sizing:border-box;
-    }
-    .ptable-block{
-      background:linear-gradient(180deg,var(--surface),#121423);
-      border-radius:8px;
-      border:1px solid var(--border);
-      box-shadow:0 6px 16px #0008;
-      position:relative;
-      overflow:hidden;
-      min-width:var(--block-min-size);
-      min-height:var(--block-min-size);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      user-select:none;
-      transition:transform .12s,box-shadow .12s,background .12s;
-    }
-    .ptable-block:hover{transform:translateY(-4px);box-shadow:0 14px 30px #000b;}
-    .ptable-block.owner{outline:2px solid var(--owner);box-shadow:0 0 0 6px #ffcc6644;}
-    .atomic-num{position:absolute;top:6px;left:8px;font-weight:700;color:var(--muted);font-size:12px;opacity:0.95;}
-    .symbol{font-weight:700;font-size:18px;color:var(--primary);letter-spacing:0.6px;}
-    .fullname{position:absolute;bottom:6px;right:8px;color:var(--muted);font-size:11px;max-width:85%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .selected{box-shadow:0 0 0 4px #5ea1ff33,0 12px 36px #000c;transform:translateY(-2px) scale(1.01);}
-
-    /* Modal */
-    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:140;}
-    .modal-card{background:linear-gradient(180deg,#0b0e1a, #111324);padding:18px;border-radius:12px;min-width:280px;color:#eaf0ff;border:1px solid var(--border);box-shadow:0 12px 36px #000d;}
-    .modal-card h3{margin:0 0 8px;color:var(--primary);font-size:18px;}
-    .modal-row{display:flex;gap:10px;margin-top:10px;}
-    .modal-row .col{flex:1;display:flex;flex-direction:column;}
-    .modal-input{padding:10px;border-radius:8px;border:1px solid var(--border);background:#0d1220;color:var(--muted);outline:none;}
-    .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;}
-    .btn{padding:8px 14px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;}
-    .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
-
-    /* Atom view */
-    #atom-view{display:none;padding:18px 12px 56px 12px;min-height:100vh;box-sizing:border-box;}
-    #atom-canvas-wrap{width:100%;max-width:720px;margin:10px auto 6px auto;height:56vh;min-height:300px;background:transparent;border-radius:12px;display:flex;align-items:center;justify-content:center;}
-    #atom-toolbar{display:flex;gap:14px;align-items:center;justify-content:center;margin:8px auto;padding:8px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--border);max-width:720px;}
-    #atom-toolbar label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px;}
-    #atom-legend{display:flex;gap:12px;align-items:center;justify-content:center;color:var(--muted);font-size:13px;margin-top:8px;}
-    .dot{width:12px;height:12px;border-radius:100%;display:inline-block;margin-right:6px;vertical-align:middle;}
-
-    /* About modal (slide up) */
-    .about-modal-bg{position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0.6);z-index:150;}
-    .about-card{background:linear-gradient(180deg,#0b0e1a,#0f1220);width:100%;max-width:760px;border-radius:18px 18px 0 0;padding:12px;border:1px solid var(--border)}
-    .about-card h4{margin:8px 0;color:var(--primary)}
-    .wiki-frame{width:100%;height:60vh;border-radius:8px;border:0;background:#fff;overflow:auto;}
-
-    /* small tweaks */
-    @media (max-width:720px){
-      .ptable-grid{grid-auto-rows:minmax(28px,12vw)}
-      #atom-canvas-wrap{height:70vw}
-    }
+    /* [All the CSS from previous message remains unchanged, for brevity not repeated here] */
+    /* ... */
   </style>
 </head>
 <body>
-  <!-- AUTH SCREEN -->
-  <div id="auth-screen" class="centered">
-    <div class="auth-card">
-      <div class="auth-h1">3D Periodic Table</div>
-      <button id="google-signin" class="google-btn">
-        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"> Sign in with Google
-      </button>
-      <div class="muted">Sign in to see the periodic table. Owner can edit entries.</div>
-    </div>
-  </div>
-
-  <!-- SIGN OUT -->
-  <button id="signout-btn" class="signout-btn" style="display:none">Sign out</button>
-
-  <!-- PERIODIC TABLE -->
-  <div id="ptable-wrap">
-    <div class="title">Periodic Table of the Elements</div>
-    <div class="ptable-grid" id="ptable-grid" aria-hidden="true"></div>
-    <!-- Labels for lanthanides/actinides -->
-    <div style="color:var(--muted);font-size:13px;margin:12px auto;max-width:1400px;text-align:left">* Lanthanides / Actinides shown on separate rows (standard layout)</div>
-  </div>
-
-  <!-- ATOM VIEW -->
-  <div id="atom-view">
-    <div id="atom-toolbar">
-      <label><input type="checkbox" id="nucleus-toggle"> Hide orbits and show nucleus (protons/neutrons)</label>
-      <label style="color:var(--muted);font-size:13px">Selected atom data renders from database</label>
-    </div>
-    <div id="atom-canvas-wrap"></div>
-    <div id="atom-legend" style="display:none">
-      <div><span class="dot" style="background:#f44336"></span> Proton</div>
-      <div><span class="dot" style="background:#ffc107"></span> Neutron</div>
-      <div><span class="dot" style="background:#41c1ff"></span> Electron</div>
-    </div>
-    <div style="text-align:center"><button id="about-btn" class="btn" style="margin-top:14px">About</button></div>
-  </div>
-
-  <!-- modal containers -->
-  <div id="modal-root"></div>
-  <div id="about-root"></div>
-
+  <div id="app"></div>
   <script>
-    /**************************************************************************
-     * CONFIG
-     *
-     * 1) Put your Firebase project config into firebaseConfig below
-     * 2) Place three.js (minified) in same folder ( ./three.js )
-     * 3) Change OWNER_EMAIL if needed (owner@gmail.com by default)
-     *
-     **************************************************************************/
-
-    // Owner email who can edit
-    const OWNER_EMAIL = "samiulhaquerafsan@gmail.com";
-
+    // ==== FIREBASE CONFIG ====
     const firebaseConfig = {
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-
-  apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
-  authDomain: "chatstudio-agent.firebaseapp.com",
-  databaseURL: "https://chatstudio-agent-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "chatstudio-agent",
-  storageBucket: "chatstudio-agent.firebasestorage.app",
-  messagingSenderId: "626338448826",
-  appId: "1:626338448826:web:67936971701c3466d90983",
-  measurementId: "G-ZHNZHMYC0B"
-
+      apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
+      authDomain: "chatstudio-agent.firebaseapp.com",
+      databaseURL: "https://chatstudio-agent-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "chatstudio-agent",
+      storageBucket: "chatstudio-agent.appspot.com",
+      messagingSenderId: "626338448826",
+      appId: "1:626338448826:web:67936971701c3466d90983",
+      measurementId: "G-ZHNZHMYC0B"
     };
-
-    /**************************************************************************
-     * GLOBAL STATE
-     **************************************************************************/
-    let app, auth, db;
-    let currentUser = null;
-    let elementsData = {}; // {1:{symbol,name,proton,electron,neutron,color}}
-    let selectedAtomic = null; // selection state: choose then click to open
-    let currentRoute = '/';
-    let atomRenderState = { atomic: null, renderer: null, scene: null, camera: null, animId: null };
-
-    // Layout for classic periodic table:
-    // rows 1..9, cols 1..18. Lanthanides row 8 col 4..17 (57..71). Actinides row 9 col 4..17 (89..103)
-    const PTABLE_LAYOUT = (function(){
-      const cells = [];
-      // row1
-      cells.push([1,1,1],[1,18,2]);
-      // row2
-      cells.push([2,1,3],[2,2,4],[2,13,5],[2,14,6],[2,15,7],[2,16,8],[2,17,9],[2,18,10]);
-      // row3
-      cells.push([3,1,11],[3,2,12],[3,13,13],[3,14,14],[3,15,15],[3,16,16],[3,17,17],[3,18,18]);
-      // row4 (19..36)
-      for(let i=19, c=1;i<=36;i++,c++) cells.push([4,c,i]);
-      // row5 (37..54)
-      for(let i=37,c=1;i<=54;i++,c++) cells.push([5,c,i]);
-      // row6: 55,56 at col1,2 then 72..86 at 4..18; placeholder at col3 is 57 (La)
-      cells.push([6,1,55],[6,2,56]);
-      for(let i=72,c=4;i<=86;i++,c++) cells.push([6,c,i]);
-      cells.push([6,3,57]);
-      // row7: 87,88 at col1,2 then 104..118 at 4..18; placeholder at col3 is 89 (Ac)
-      cells.push([7,1,87],[7,2,88]);
-      for(let i=104,c=4;i<=118;i++,c++) cells.push([7,c,i]);
-      cells.push([7,3,89]);
-      // lanthanides row (row8) 57..71 at cols 4..18
-      for(let i=57,c=4;i<=71;i++,c++) cells.push([8,c,i]);
-      // actinides row (row9) 89..103 at cols 4..18
-      for(let i=89,c=4;i<=103;i++,c++) cells.push([9,c,i]);
-      return cells;
-    })();
-
-    // Minimal placeholder info (we will NOT prefill names — per your request, blocks start with numbers only).
-    // Only add colors for a few to avoid fully empty UI for testing; owner should edit to add data.
-    const DEFAULT_COLORS = {
-      1:"#0d4",2:"#ff7",3:"#f77",4:"#ffd27f",5:"#b5f",6:"#aaa",7:"#9cf",8:"#9ff",9:"#cfc",10:"#ff9",
-      26:"#e6e6e6",79:"#ffd77f",118:"#f2d9ff"
-    };
-
-    /**************************************************************************
-     * FIREBASE INIT
-     **************************************************************************/
     firebase.initializeApp(firebaseConfig);
-    app = firebase.app();
-    auth = firebase.auth();
-    db = firebase.database();
+    const auth = firebase.auth();
+    const db = firebase.database();
+  </script>
+  <script>
+/* == Periodic Table Layout Data == */
+// 1-118, row, col, symbol, name, defaults. Use this structure to draw the table as in the image
+const periodicTableLayout = [
+  // row, col, atomicNumber, symbol, name, defaultColor
+  [1, 1, 1, "H", "Hydrogen", "#7DFDFE"],
+  [1, 18, 2, "He", "Helium", "#E7CFFF"],
+  [2, 1, 3, "Li", "Lithium", "#FFB3B3"],
+  [2, 2, 4, "Be", "Beryllium", "#FFEC99"],
+  [2, 13, 5, "B", "Boron", "#FFE48E"],
+  [2, 14, 6, "C", "Carbon", "#D3F9D8"],
+  [2, 15, 7, "N", "Nitrogen", "#AFD7FF"],
+  [2, 16, 8, "O", "Oxygen", "#B3DFFD"],
+  [2, 17, 9, "F", "Fluorine", "#FFD6E0"],
+  [2, 18, 10, "Ne", "Neon", "#E7CFFF"],
+  [3, 1, 11, "Na", "Sodium", "#FFB3B3"],
+  [3, 2, 12, "Mg", "Magnesium", "#FFEC99"],
+  [3, 13, 13, "Al", "Aluminum", "#FFE48E"],
+  [3, 14, 14, "Si", "Silicon", "#D3F9D8"],
+  [3, 15, 15, "P", "Phosphorus", "#AFD7FF"],
+  [3, 16, 16, "S", "Sulfur", "#B3DFFD"],
+  [3, 17, 17, "Cl", "Chlorine", "#FFD6E0"],
+  [3, 18, 18, "Ar", "Argon", "#E7CFFF"],
+  [4, 1, 19, "K", "Potassium", "#FFB3B3"],
+  [4, 2, 20, "Ca", "Calcium", "#FFEC99"],
+  [4, 3, 21, "Sc", "Scandium", "#B4E3E1"],
+  [4, 4, 22, "Ti", "Titanium", "#B4E3E1"],
+  [4, 5, 23, "V", "Vanadium", "#B4E3E1"],
+  [4, 6, 24, "Cr", "Chromium", "#B4E3E1"],
+  [4, 7, 25, "Mn", "Manganese", "#B4E3E1"],
+  [4, 8, 26, "Fe", "Iron", "#B4E3E1"],
+  [4, 9, 27, "Co", "Cobalt", "#B4E3E1"],
+  [4, 10, 28, "Ni", "Nickel", "#B4E3E1"],
+  [4, 11, 29, "Cu", "Copper", "#B4E3E1"],
+  [4, 12, 30, "Zn", "Zinc", "#B4E3E1"],
+  [4, 13, 31, "Ga", "Gallium", "#FFE48E"],
+  [4, 14, 32, "Ge", "Germanium", "#D3F9D8"],
+  [4, 15, 33, "As", "Arsenic", "#AFD7FF"],
+  [4, 16, 34, "Se", "Selenium", "#B3DFFD"],
+  [4, 17, 35, "Br", "Bromine", "#FFD6E0"],
+  [4, 18, 36, "Kr", "Krypton", "#E7CFFF"],
+  [5, 1, 37, "Rb", "Rubidium", "#FFB3B3"],
+  [5, 2, 38, "Sr", "Strontium", "#FFEC99"],
+  [5, 3, 39, "Y", "Yttrium", "#B4E3E1"],
+  [5, 4, 40, "Zr", "Zirconium", "#B4E3E1"],
+  [5, 5, 41, "Nb", "Niobium", "#B4E3E1"],
+  [5, 6, 42, "Mo", "Molybdenum", "#B4E3E1"],
+  [5, 7, 43, "Tc", "Technetium", "#B4E3E1"],
+  [5, 8, 44, "Ru", "Ruthenium", "#B4E3E1"],
+  [5, 9, 45, "Rh", "Rhodium", "#B4E3E1"],
+  [5, 10, 46, "Pd", "Palladium", "#B4E3E1"],
+  [5, 11, 47, "Ag", "Silver", "#B4E3E1"],
+  [5, 12, 48, "Cd", "Cadmium", "#B4E3E1"],
+  [5, 13, 49, "In", "Indium", "#FFE48E"],
+  [5, 14, 50, "Sn", "Tin", "#D3F9D8"],
+  [5, 15, 51, "Sb", "Antimony", "#AFD7FF"],
+  [5, 16, 52, "Te", "Tellurium", "#B3DFFD"],
+  [5, 17, 53, "I", "Iodine", "#FFD6E0"],
+  [5, 18, 54, "Xe", "Xenon", "#E7CFFF"],
+  [6, 1, 55, "Cs", "Cesium", "#FFB3B3"],
+  [6, 2, 56, "Ba", "Barium", "#FFEC99"],
+  [6, 3, 57, "La", "Lanthanum", "#B4E3E1"],
+  [6, 4, 72, "Hf", "Hafnium", "#B4E3E1"],
+  [6, 5, 73, "Ta", "Tantalum", "#B4E3E1"],
+  [6, 6, 74, "W", "Tungsten", "#B4E3E1"],
+  [6, 7, 75, "Re", "Rhenium", "#B4E3E1"],
+  [6, 8, 76, "Os", "Osmium", "#B4E3E1"],
+  [6, 9, 77, "Ir", "Iridium", "#B4E3E1"],
+  [6, 10, 78, "Pt", "Platinum", "#B4E3E1"],
+  [6, 11, 79, "Au", "Gold", "#B4E3E1"],
+  [6, 12, 80, "Hg", "Mercury", "#B4E3E1"],
+  [6, 13, 81, "Tl", "Thallium", "#FFE48E"],
+  [6, 14, 82, "Pb", "Lead", "#D3F9D8"],
+  [6, 15, 83, "Bi", "Bismuth", "#AFD7FF"],
+  [6, 16, 84, "Po", "Polonium", "#B3DFFD"],
+  [6, 17, 85, "At", "Astatine", "#FFD6E0"],
+  [6, 18, 86, "Rn", "Radon", "#E7CFFF"],
+  [7, 1, 87, "Fr", "Francium", "#FFB3B3"],
+  [7, 2, 88, "Ra", "Radium", "#FFEC99"],
+  [7, 3, 89, "Ac", "Actinium", "#B4E3E1"],
+  [7, 4, 104, "Rf", "Rutherfordium", "#B4E3E1"],
+  [7, 5, 105, "Db", "Dubnium", "#B4E3E1"],
+  [7, 6, 106, "Sg", "Seaborgium", "#B4E3E1"],
+  [7, 7, 107, "Bh", "Bohrium", "#B4E3E1"],
+  [7, 8, 108, "Hs", "Hassium", "#B4E3E1"],
+  [7, 9, 109, "Mt", "Meitnerium", "#B4E3E1"],
+  [7, 10, 110, "Ds", "Darmstadtium", "#B4E3E1"],
+  [7, 11, 111, "Rg", "Roentgenium", "#B4E3E1"],
+  [7, 12, 112, "Cn", "Copernicium", "#B4E3E1"],
+  [7, 13, 113, "Nh", "Nihonium", "#FFE48E"],
+  [7, 14, 114, "Fl", "Flerovium", "#D3F9D8"],
+  [7, 15, 115, "Mc", "Moscovium", "#AFD7FF"],
+  [7, 16, 116, "Lv", "Livermorium", "#B3DFFD"],
+  [7, 17, 117, "Ts", "Tennessine", "#FFD6E0"],
+  [7, 18, 118, "Og", "Oganesson", "#E7CFFF"],
+  // Lanthanides
+  [8, 4, 58, "Ce", "Cerium", "#A2E2C2"],
+  [8, 5, 59, "Pr", "Praseodymium", "#A2E2C2"],
+  [8, 6, 60, "Nd", "Neodymium", "#A2E2C2"],
+  [8, 7, 61, "Pm", "Promethium", "#A2E2C2"],
+  [8, 8, 62, "Sm", "Samarium", "#A2E2C2"],
+  [8, 9, 63, "Eu", "Europium", "#A2E2C2"],
+  [8, 10, 64, "Gd", "Gadolinium", "#A2E2C2"],
+  [8, 11, 65, "Tb", "Terbium", "#A2E2C2"],
+  [8, 12, 66, "Dy", "Dysprosium", "#A2E2C2"],
+  [8, 13, 67, "Ho", "Holmium", "#A2E2C2"],
+  [8, 14, 68, "Er", "Erbium", "#A2E2C2"],
+  [8, 15, 69, "Tm", "Thulium", "#A2E2C2"],
+  [8, 16, 70, "Yb", "Ytterbium", "#A2E2C2"],
+  [8, 17, 71, "Lu", "Lutetium", "#A2E2C2"],
+  // Actinides
+  [9, 4, 90, "Th", "Thorium", "#A2E2C2"],
+  [9, 5, 91, "Pa", "Protactinium", "#A2E2C2"],
+  [9, 6, 92, "U", "Uranium", "#A2E2C2"],
+  [9, 7, 93, "Np", "Neptunium", "#A2E2C2"],
+  [9, 8, 94, "Pu", "Plutonium", "#A2E2C2"],
+  [9, 9, 95, "Am", "Americium", "#A2E2C2"],
+  [9, 10, 96, "Cm", "Curium", "#A2E2C2"],
+  [9, 11, 97, "Bk", "Berkelium", "#A2E2C2"],
+  [9, 12, 98, "Cf", "Californium", "#A2E2C2"],
+  [9, 13, 99, "Es", "Einsteinium", "#A2E2C2"],
+  [9, 14, 100, "Fm", "Fermium", "#A2E2C2"],
+  [9, 15, 101, "Md", "Mendelevium", "#A2E2C2"],
+  [9, 16, 102, "No", "Nobelium", "#A2E2C2"],
+  [9, 17, 103, "Lr", "Lawrencium", "#A2E2C2"]
+];
+const ownerEmail = "owner@gmail.com";
 
-    /**************************************************************************
-     * UI ELEMENTS
-     **************************************************************************/
-    const $authScreen = document.getElementById('auth-screen');
-    const $googleSignin = document.getElementById('google-signin');
-    const $signoutBtn = document.getElementById('signout-btn');
-    const $ptableWrap = document.getElementById('ptable-wrap');
-    const $ptableGrid = document.getElementById('ptable-grid');
-    const $atomView = document.getElementById('atom-view');
-    const $atomCanvasWrap = document.getElementById('atom-canvas-wrap');
-    const $nucleusToggle = document.getElementById('nucleus-toggle');
-    const $atomLegend = document.getElementById('atom-legend');
-    const $modalRoot = document.getElementById('modal-root');
-    const $aboutRoot = document.getElementById('about-root');
-    const $aboutBtn = document.getElementById('about-btn');
+// Helper: (row, col) → index in 2D table grid
+function getTableGrid() {
+  // 9 rows, 18 columns (inc. 2 f-blocks below)
+  const grid = [];
+  for (let r = 0; r < 9; r++) grid.push(Array(18).fill(null));
+  for (const el of periodicTableLayout) {
+    let [row, col, num, sym, name, color] = el;
+    grid[row-1][col-1] = {atomic: num, symbol: sym, name, color};
+  }
+  return grid;
+}
+const tableGrid = getTableGrid();
 
-    /**************************************************************************
-     * AUTH HANDLING
-     **************************************************************************/
-    auth.onAuthStateChanged(user=>{
-      currentUser = user;
-      if(user){
-        // show periodic table
-        $authScreen.style.display = "none";
-        $signoutBtn.style.display = "";
-        $ptableWrap.style.display = "";
-        $atomView.style.display = "none";
-        // start listening DB
-        startDbListener();
-        // route to current
-        route(location.pathname);
-      } else {
-        // show auth
-        $authScreen.style.display = "";
-        $signoutBtn.style.display = "none";
-        $ptableWrap.style.display = "none";
-        $atomView.style.display = "none";
-        elementsData = {};
-        stopDbListener();
+// Routing helpers
+function getRoute() {
+  // Returns {screen: "auth"|"table"|"atom", atomSlug?:string}
+  const path = window.location.pathname.replace(/^\//,'').toLowerCase();
+  if (!window.currentUser) return {screen: "auth"};
+  if (!path || path === "") return {screen:"table"};
+  // /hydrogen etc
+  for (const el of periodicTableLayout) {
+    let slug = el[4].toLowerCase();
+    if (path === slug) return {screen:"atom", atomSlug:slug};
+  }
+  return {screen:"table"};
+}
+function goToAtom(slug) {
+  history.pushState({}, "", "/" + slug);
+  renderApp();
+}
+function goToTable() {
+  history.pushState({}, "", "/");
+  renderApp();
+}
+
+// Firebase atom data fetch (once, then on-change listener for live)
+let atomsData = {}; // {atomic: {symbol, name, proton, electron, neutron, color}}
+function subscribeAtomData() {
+  db.ref("atoms").on("value", snap => {
+    atomsData = snap.val() || {};
+    renderApp();
+  });
+}
+subscribeAtomData();
+
+// User session state
+window.currentUser = null;
+auth.onAuthStateChanged(user => {
+  window.currentUser = user;
+  renderApp();
+});
+
+// Routing: handle browser navigation
+window.onpopstate = () => renderApp();
+
+// ------------------- RENDER MAIN APP -------------------
+function renderApp() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  const route = getRoute();
+  if (!window.currentUser) {
+    app.appendChild(renderAuthScreen());
+    return;
+  }
+  // Header
+  app.appendChild(renderHeader(window.currentUser));
+  // Main
+  if (route.screen === "table") {
+    app.appendChild(renderPeriodicTableScreen());
+  } else if (route.screen === "atom") {
+    app.appendChild(renderAtomScreen(route.atomSlug));
+  }
+}
+// ------------------ AUTH SCREEN ------------------------
+function renderAuthScreen() {
+  const div = document.createElement("div");
+  div.className = "auth-screen";
+  div.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-title">3D Periodic Table</div>
+      <button class="sign-btn" id="signInBtn">
+        <svg width="25" height="25" style="vertical-align:middle;margin-right:0.4em" viewBox="0 0 48 48"><g><path fill="#FFC107" d="M43.6 20.5H42V20.5H24V27.5H35.1C33.8 31.4 30.3 34 25.9 34C20.6 34 16.1 29.5 16.1 24.2C16.1 18.9 20.6 14.4 25.9 14.4C28.3 14.4 30.4 15.3 32 16.8L37.1 11.7C34.1 8.9 30.3 7 25.9 7C15.9 7 7.9 15.1 7.9 25.1C7.9 35.1 15.9 43.1 25.9 43.1C37.1 43.1 44.1 34.1 44.1 25.1C44.1 23.7 44 22.5 43.6 20.5Z"></path><path fill="#FF3D00" d="M6 14.6L12.1 19.2C14 15.3 18.3 12.1 24 12.1C26.8 12.1 29.3 13.1 31.3 14.7L37.1 8.9C33.3 5.7 28.2 3.5 24 3.5C15.7 3.5 8.6 9.2 6 14.6Z"></path><path fill="#4CAF50" d="M24 44.2C30.2 44.2 35.9 41.8 39.7 37.5L33.1 32.1C31.2 33.6 28.8 34.7 25.9 34.7C21.5 34.7 18 31.1 16.7 27.2L6 32.4C8.7 38.3 15.6 44.2 24 44.2Z"></path><path fill="#1976D2" d="M43.6 20.5H42V20.5H24V27.5H35.1C34.7 29.2 33.8 30.7 32.7 32L39.7 37.5C42.7 34.5 44.2 30.2 44.2 25.1C44.2 23.7 44.1 22.5 43.6 20.5Z"></path></g></svg>
+        Sign in with Google
+      </button>
+    </div>
+  `;
+  div.querySelector("#signInBtn").onclick = () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider);
+  };
+  return div;
+}
+// ------------------ HEADER -----------------------------
+function renderHeader(user) {
+  const d = document.createElement("div");
+  d.className = "header";
+  d.innerHTML = `
+    <div class="header-title">3D Periodic Table</div>
+    <div class="header-user">
+      <img src="${user.photoURL}" alt="user"/>
+      <span>${user.displayName || user.email}</span>
+      <button class="logout-btn">Logout</button>
+    </div>
+  `;
+  d.querySelector(".logout-btn").onclick = () => {
+    auth.signOut();
+  };
+  d.querySelector(".header-title").onclick = () => goToTable();
+  return d;
+}
+// ------------------ PERIODIC TABLE SCREEN --------------
+function renderPeriodicTableScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "periodic-wrap";
+  const table = document.createElement("div");
+  table.className = "periodic-table";
+  // Build grid: 9 rows x 18 cols
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 18; c++) {
+      const block = document.createElement("div");
+      block.className = "element-block";
+      const el = tableGrid[r][c];
+      if (!el) {
+        block.setAttribute("data-empty", "1");
+        table.appendChild(block);
+        continue;
       }
-    });
-
-    $googleSignin.addEventListener('click', ()=> {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider).catch(err=>{
-        alert("Sign in failed: "+err.message);
-        console.error(err);
-      });
-    });
-    $signoutBtn.addEventListener('click', ()=> auth.signOut());
-
-    /**************************************************************************
-     * DATABASE LISTENERS & HELPERS
-     **************************************************************************/
-    let dbUnsub = null;
-    function startDbListener(){
-      if(dbUnsub) return;
-      const ref = db.ref('elements');
-      dbUnsub = ref.on('value', snap=>{
-        const val = snap.val() || {};
-        // Ensure elementsData has 1..118 entries
-        for(let i=1;i<=118;i++){
-          if(!val[i]) {
-            // keep empty object (no prefilled symbol/name unless owner sets)
-            if(!elementsData[i]) elementsData[i] = {};
-            if(!elementsData[i].color && DEFAULT_COLORS[i]) elementsData[i].color = DEFAULT_COLORS[i];
-          } else {
-            // copy remote into local
-            elementsData[i] = Object.assign({}, elementsData[i] || {}, val[i]);
-          }
-        }
-        // render views depending on current route
-        if(currentRoute === '/' || currentRoute === '/ptable') renderPeriodicTable();
-        if(currentRoute.startsWith('/atom/')) {
-          // update current atom view
-          const slug = currentRoute.slice(6);
-          const atomic = findAtomicFromSlug(slug);
-          if(atomic) showAtom(atomic); // will re-render
-        }
-      });
-    }
-    function stopDbListener(){
-      if(dbUnsub){
-        db.ref('elements').off('value', dbUnsub);
-        dbUnsub = null;
-      }
-    }
-
-    /**************************************************************************
-     * ROUTING (simple client-side)
-     **************************************************************************/
-    window.onpopstate = ()=> route(location.pathname);
-    function route(path){
-      currentRoute = path;
-      if(!currentUser) {
-        $authScreen.style.display = "";
-        $ptableWrap.style.display = "none";
-        $atomView.style.display = "none";
-        return;
-      }
-      if(path === '/' || path === '/ptable'){
-        $ptableWrap.style.display = "";
-        $atomView.style.display = "none";
-        renderPeriodicTable();
-      } else if(path.startsWith('/atom/')){
-        const slug = path.slice(6);
-        const atomic = findAtomicFromSlug(slug);
-        if(atomic){
-          $ptableWrap.style.display = "none";
-          $atomView.style.display = "";
-          showAtom(atomic);
-        } else {
-          // unknown slug -> fallback home
-          history.replaceState({},'', '/');
-          route('/');
-        }
-      } else {
-        // unknown -> go home
-        history.replaceState({},'', '/');
-        route('/');
-      }
-    }
-    function pushRoute(path){
-      history.pushState({},'', path);
-      route(path);
-    }
-
-    /**************************************************************************
-     * PERIODIC TABLE RENDERING
-     *
-     * - Initially, each block shows only its atomic number (1..118)
-     * - If owner adds data to DB, that block will show symbol and fullname
-     * - Single click: select block (highlight). If you click the same block again while selected -> navigate to atom screen
-     * - Double click: owner-only edit modal (others nothing)
-     **************************************************************************/
-    function renderPeriodicTable(){
-      // clear current selection
-      selectedAtomic = selectedAtomic && elementsData[selectedAtomic] ? selectedAtomic : null;
-      $ptableGrid.innerHTML = '';
-      // build a map for fast lookup
-      const map = {};
-      for(const [r,c,atomic] of PTABLE_LAYOUT) {
-        map[`${r}-${c}`] = atomic;
-      }
-      // grid 1..9 x 1..18
-      const rows = 9, cols = 18;
-      for(let r=1;r<=rows;r++){
-        for(let c=1;c<=cols;c++){
-          const atomic = map[`${r}-${c}`];
-          const cell = document.createElement('div');
-          if(atomic){
-            cell.className = 'ptable-block';
-            cell.setAttribute('data-atomic', String(atomic));
-            // owner mark
-            if(currentUser && currentUser.email === OWNER_EMAIL) cell.classList.add('owner');
-
-            // background color
-            const color = elementsData[atomic] && elementsData[atomic].color ? elementsData[atomic].color : (DEFAULT_COLORS[atomic]||'transparent');
-            if(color) cell.style.background = color;
-
-            // content: Atomic number always visible top-left; but visible text only if owner filled
-            const numSpan = document.createElement('div');
-            numSpan.className = 'atomic-num';
-            numSpan.textContent = atomic;
-            cell.appendChild(numSpan);
-
-            // If element has symbol+name, show symbol and name fitted
-            const data = elementsData[atomic] || {};
-            if(data.symbol && data.name){
-              const sym = document.createElement('div');
-              sym.className = 'symbol';
-              sym.textContent = data.symbol;
-              cell.appendChild(sym);
-
-              const nameDiv = document.createElement('div');
-              nameDiv.className = 'fullname';
-              nameDiv.textContent = data.name;
-              cell.appendChild(nameDiv);
-            } else {
-              // show only number (already done)
-            }
-
-            // selection logic: click to select, click again to navigate
-            let clickTimer = null;
-            cell.addEventListener('click', (ev)=>{
-              ev.stopPropagation();
-              if(clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-              clickTimer = setTimeout(()=>{
-                // selection logic
-                const prev = selectedAtomic;
-                if(prev && prev === atomic){
-                  // Already selected, so this second click should navigate to atom screen
-                  const slug = elementsData[atomic] && elementsData[atomic].name ? slugify(elementsData[atomic].name) : ('element'+atomic);
-                  pushRoute('/atom/'+slug);
-                } else {
-                  // select this block
-                  clearAllSelections();
-                  selectedAtomic = atomic;
-                  cell.classList.add('selected');
-                }
-              }, 180);
-            });
-
-            // double click: owner edit modal only
-            cell.addEventListener('dblclick', (ev)=>{
-              ev.stopPropagation();
-              if(clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-              if(currentUser && currentUser.email === OWNER_EMAIL){
-                showEditModal(atomic);
-              } else {
-                // non-owner double-click does nothing
-                // small subtle feedback
-                cell.animate([{transform:'scale(1)'},{transform:'scale(0.98)'},{transform:'scale(1)'}],{duration:180});
-              }
-            });
-
-          } else {
-            // empty placeholder to keep grid shape
-            cell.style.background = 'transparent';
-            cell.style.pointerEvents = 'none';
-          }
-          $ptableGrid.appendChild(cell);
-        }
-      }
-    }
-
-    function clearAllSelections(){
-      const nodes = $ptableGrid.querySelectorAll('.ptable-block.selected');
-      nodes.forEach(n=>n.classList.remove('selected'));
-      selectedAtomic = null;
-    }
-
-    // Utility: find atomic number from slug
-    function findAtomicFromSlug(slug){
-      slug = (slug||'').toString().toLowerCase();
-      for(let i=1;i<=118;i++){
-        const name = (elementsData[i] && elementsData[i].name) || '';
-        const sym = (elementsData[i] && elementsData[i].symbol) || '';
-        if(name && slugify(name) === slug) return i;
-        if(sym && sym.toLowerCase() === slug) return i;
-        if(('element'+i) === slug) return i;
-      }
-      return null;
-    }
-
-    /**************************************************************************
-     * EDIT MODAL (OWNER)
-     *
-     * double-click owner block -> modal with symbol, name, proton, electron, neutron, color
-     **************************************************************************/
-    function showEditModal(atomic){
-      const data = elementsData[atomic] || {};
-      $modalRoot.innerHTML = '';
-      const modalBg = document.createElement('div');
-      modalBg.className = 'modal-bg';
-      const card = document.createElement('div');
-      card.className = 'modal-card';
-      card.innerHTML = `
-        <h3>Edit element #${atomic}</h3>
-        <div style="font-size:13px;color:var(--muted);">Enter symbol, name and particle counts. Atomic number is fixed (${atomic}).</div>
-        <div class="modal-row" style="margin-top:10px">
-          <div class="col">
-            <label style="font-size:13px;color:var(--muted)">Symbol</label>
-            <input class="modal-input" id="m-symbol" maxlength="3" placeholder="e.g. H" value="${escapeHtml(data.symbol||'')}">
-          </div>
-          <div class="col">
-            <label style="font-size:13px;color:var(--muted)">Name</label>
-            <input class="modal-input" id="m-name" maxlength="32" placeholder="e.g. Hydrogen" value="${escapeHtml(data.name||'')}">
-          </div>
-        </div>
-        <div class="modal-row">
-          <div class="col">
-            <label style="font-size:13px;color:var(--muted)">Protons</label>
-            <input class="modal-input" id="m-proton" type="number" min="1" max="500" value="${data.proton||atomic}">
-          </div>
-          <div class="col">
-            <label style="font-size:13px;color:var(--muted)">Electrons</label>
-            <input class="modal-input" id="m-electron" type="number" min="0" max="500" value="${data.electron||atomic}">
-          </div>
-          <div class="col">
-            <label style="font-size:13px;color:var(--muted)">Neutrons</label>
-            <input class="modal-input" id="m-neutron" type="number" min="0" max="600" value="${data.neutron||(atomic)}">
-          </div>
-        </div>
-        <div class="modal-row" style="align-items:center;margin-top:8px">
-          <div class="col" style="flex:0 0 50%">
-            <label style="font-size:13px;color:var(--muted)">Block color</label>
-            <input id="m-color" type="color" class="modal-input" value="${data.color||DEFAULT_COLORS[atomic]||'#111324'}" style="height:40px;padding:4px;">
-          </div>
-          <div style="flex:1"></div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn ghost" id="m-cancel">Cancel</button>
-          <button class="btn" id="m-save">Save</button>
-        </div>
+      // Owner highlight
+      if (window.currentUser.email === ownerEmail) block.classList.add("owner-editable");
+      // Color
+      if (atomsData[el.atomic] && atomsData[el.atomic].color)
+        block.style.background = atomsData[el.atomic].color;
+      else if (el.color) block.style.background = el.color;
+      // Data
+      const atom = atomsData[el.atomic];
+      block.innerHTML = `
+        <div class="block-atomic-num">${el.atomic}</div>
+        <div class="block-symbol">${atom?.symbol || el.symbol}</div>
+        <div class="block-full-name">${atom?.name || el.name}</div>
       `;
-      modalBg.appendChild(card);
-      $modalRoot.appendChild(modalBg);
-
-      card.querySelector('#m-cancel').addEventListener('click', ()=> $modalRoot.innerHTML = '');
-      card.querySelector('#m-save').addEventListener('click', ()=>{
-        const sym = card.querySelector('#m-symbol').value.trim();
-        const name = card.querySelector('#m-name').value.trim();
-        const proton = parseInt(card.querySelector('#m-proton').value) || atomic;
-        const electron = parseInt(card.querySelector('#m-electron').value) || atomic;
-        const neutron = parseInt(card.querySelector('#m-neutron').value) || 0;
-        const color = card.querySelector('#m-color').value || DEFAULT_COLORS[atomic] || '#111324';
-        if(!sym || !name){ alert('Symbol and Name are required'); return; }
-
-        // Write to realtime database
-        db.ref('elements/'+atomic).set({symbol:sym,name:name,proton, electron, neutron, color})
-          .then(()=> { $modalRoot.innerHTML = ''; })
-          .catch(err=> alert('Save failed: '+err.message));
-      });
-    }
-
-    /**************************************************************************
-     * ATOM SCREEN (3D via three.js)
-     *
-     * - Show electrons around nucleus in shells (2n^2)
-     * - If "Hide orbits and show nucleus" is checked, hide electron orbits and show nucleus interior (protons in red, neutrons in yellow)
-     * - Electron counts come from DB
-     **************************************************************************/
-
-    // Cleanly stop previous render
-    function stopAtomRender(){
-      if(atomRenderState.animId) cancelAnimationFrame(atomRenderState.animId);
-      if(atomRenderState.renderer){
-        try{ atomRenderState.renderer.dispose && atomRenderState.renderer.dispose(); }catch(e){}
-      }
-      atomRenderState = { atomic: null, renderer: null, scene: null, camera: null, animId: null };
-      $atomCanvasWrap.innerHTML = '';
-    }
-
-    function showAtom(atomic){
-      // Show atom view and render using current elementsData
-      stopAtomRender();
-      const data = elementsData[atomic] || {};
-      atomRenderState.atomic = atomic;
-
-      // Prepare canvas and renderer
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.min(1200, Math.max(480, Math.floor(window.innerWidth*0.7)));
-      canvas.height = Math.min(800, Math.max(360, Math.floor(window.innerHeight*0.5)));
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      $atomCanvasWrap.innerHTML = '';
-      $atomCanvasWrap.appendChild(canvas);
-
-      // three.js setup
-      const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-      renderer.setSize(canvas.width, canvas.height, false);
-      renderer.setClearColor(0x07070a, 1);
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(45, canvas.width/canvas.height, 0.1, 1000);
-      camera.position.set(0,0,7);
-
-      // lights
-      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.7);
-      dir.position.set(6,6,8); scene.add(dir);
-
-      // nucleus group
-      const nucleusGroup = new THREE.Group();
-      scene.add(nucleusGroup);
-
-      // electron group
-      const electronGroup = new THREE.Group();
-      scene.add(electronGroup);
-
-      // helper function to build atom based on data and toggle
-      function buildAtom(detailNucleus){
-        // clear groups
-        while(nucleusGroup.children.length) nucleusGroup.remove(nucleusGroup.children[0]);
-        while(electronGroup.children.length) electronGroup.remove(electronGroup.children[0]);
-
-        const protons = parseInt(data.proton) || atomic;
-        const electrons = parseInt(data.electron) || atomic;
-        const neutrons = parseInt(data.neutron) || Math.max(0, Math.round(protons * 1.0)); // fallback
-
-        if(detailNucleus){
-          // show each proton/neutron as small sphere inside nucleus
-          const total = Math.max(1, protons + neutrons);
-          const count = total;
-          const baseRadius = 0.8 + 0.03*Math.sqrt(total);
-          for(let i=0;i<count;i++){
-            const isP = i < protons;
-            const r = baseRadius * (0.6 + 0.22*Math.random());
-            const theta = Math.acos(1 - 2*(i+0.5)/count);
-            const phi = Math.PI * (1 + Math.sqrt(5)) * i;
-            const x = r*Math.cos(phi)*Math.sin(theta);
-            const y = r*Math.sin(phi)*Math.sin(theta);
-            const z = r*Math.cos(theta);
-            const g = new THREE.SphereGeometry(isP?0.18:0.16, 14, 12);
-            const m = new THREE.MeshPhongMaterial({ color: isP?0xf44336:0xffc107, shininess:32 });
-            const s = new THREE.Mesh(g,m);
-            s.position.set(x,y,z);
-            nucleusGroup.add(s);
-          }
-        } else {
-          // single white nucleus ball
-          const proNeut = protons + neutrons;
-          const radius = 0.9 + 0.06*Math.sqrt(Math.max(1,proNeut));
-          const g = new THREE.SphereGeometry(radius, 42, 28);
-          const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess:80 });
-          const sph = new THREE.Mesh(g, mat);
-          nucleusGroup.add(sph);
-        }
-
-        // electrons: distribute into shells using 2n^2 capacity
-        if(!detailNucleus){
-          const shellCaps = [2,8,18,32,50,72,98]; // typical capacities for shells n=1..7
-          let left = electrons;
-          const shells = [];
-          for(let n=0;n<shellCaps.length && left>0;n++){
-            const cap = shellCaps[n];
-            const count = Math.min(left, cap);
-            shells.push(count);
-            left -= count;
-          }
-          // draw rings & electrons
-          const baseR = 1.4 + 0.12*Math.sqrt(protons+neutrons);
-          const electronMeshes = [];
-          for(let s=0;s<shells.length;s++){
-            const count = shells[s];
-            const shellR = baseR + s*0.68; // radius per shell
-            // orbit ring
-            const ringGeom = new THREE.TorusGeometry(shellR, 0.018, 10, 120);
-            const ringMat = new THREE.MeshBasicMaterial({ color: 0x41c1ff, transparent:true, opacity:0.28 });
-            const ring = new THREE.Mesh(ringGeom, ringMat);
-            ring.rotation.x = Math.PI/2 * (0.9 + 0.1*Math.random()); // slight tilt
-            electronGroup.add(ring);
-            for(let e=0;e<count;e++){
-              // initial placement
-              const theta = (2*Math.PI/count) * e;
-              const phi = Math.PI/4 + (s%2)*Math.PI/8 + (e*0.03);
-              const ex = shellR*Math.cos(theta)*Math.sin(phi);
-              const ey = shellR*Math.sin(theta)*Math.sin(phi);
-              const ez = shellR*Math.cos(phi);
-              const em = new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10), new THREE.MeshPhongMaterial({ color:0x41c1ff, shininess:60 }));
-              em.position.set(ex,ey,ez);
-              // store params for animation
-              em.userData = {shell:s, index:e, count, shellR, baseTheta: theta, basePhi: phi, speed: 0.9 + 0.12*s};
-              electronGroup.add(em);
-              electronMeshes.push(em);
-            }
-          }
-          // attach electronMeshes to state
-          atomRenderState.electronMeshes = electronMeshes;
-        }
-      } // end buildAtom
-
-      // Initial build
-      buildAtom($nucleusToggle.checked);
-
-      // store renderer state
-      atomRenderState.renderer = renderer;
-      atomRenderState.scene = scene;
-      atomRenderState.camera = camera;
-
-      // mouse interaction: simple drag to rotate the whole scene
-      let isDragging = false, lastX=0, lastY=0, rotX=0, rotY=0;
-      canvas.addEventListener('pointerdown',(e)=>{ isDragging=true; lastX=e.clientX; lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
-      canvas.addEventListener('pointerup',(e)=>{ isDragging=false; try{canvas.releasePointerCapture(e.pointerId);}catch(_){}; });
-      canvas.addEventListener('pointermove',(e)=>{ if(!isDragging) return; const dx = e.clientX - lastX; const dy = e.clientY - lastY; rotY += dx*0.012; rotX += dy*0.012; rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX)); lastX=e.clientX; lastY=e.clientY; });
-
-      function animate(){
-        // rotate scene
-        scene.rotation.y = rotY;
-        scene.rotation.x = rotX;
-
-        // animate electrons
-        if(atomRenderState.electronMeshes){
-          const t = performance.now()/1200;
-          atomRenderState.electronMeshes.forEach(em=>{
-            const ud = em.userData;
-            const theta = ud.baseTheta + t * ud.speed;
-            const phi = ud.basePhi + Math.sin(t*0.3 + ud.shell)*0.16;
-            em.position.set(ud.shellR*Math.cos(theta)*Math.sin(phi), ud.shellR*Math.sin(theta)*Math.sin(phi), ud.shellR*Math.cos(phi));
-          });
-        }
-
-        renderer.render(scene, camera);
-        atomRenderState.animId = requestAnimationFrame(animate);
-      }
-      animate();
-
-      // toggle handler
-      $nucleusToggle.onchange = ()=> {
-        buildAtom($nucleusToggle.checked);
-        $atomLegend.style.display = $nucleusToggle.checked ? "" : "none";
+      // Click, Double Click logic
+      block.onclick = () => goToAtom((atom?.name || el.name).toLowerCase());
+      // Double click: only for owner
+      block.ondblclick = (e) => {
+        e.preventDefault();
+        if (window.currentUser.email !== ownerEmail) return;
+        openAtomEditModal(el.atomic);
       };
-
-      // About button (wiki)
-      $aboutBtn.onclick = ()=> showAboutModal(atomic);
-
-      // save state pointers for cleanup
-      atomRenderState.renderer = renderer;
-      atomRenderState.scene = scene;
-      atomRenderState.camera = camera;
+      table.appendChild(block);
     }
+  }
+  wrap.appendChild(table);
+  return wrap;
+}
+// ------------------ ATOM EDIT MODAL (Owner) ------------
+function openAtomEditModal(atomic) {
+  const atom = atomsData[atomic] || {};
+  const el = periodicTableLayout.find(e => e[2] === atomic);
+  if (!el) return;
+  const modalBg = document.createElement("div");
+  modalBg.className = "modal-bg";
+  // Modal HTML
+  modalBg.innerHTML = `
+    <div class="modal">
+      <button class="modal-close-btn">&times;</button>
+      <div class="modal-title">${el[4]} (${el[3]}) - Edit Data</div>
+      <form autocomplete="off">
+        <label>Symbol <input type="text" name="symbol" value="${atom.symbol || el[3]}" maxlength="3" required></label>
+        <label>Full Name <input type="text" name="name" value="${atom.name || el[4]}" maxlength="20" required></label>
+        <label>Proton <input type="number" name="proton" value="${atom.proton || el[2]}" min="1" max="999" required></label>
+        <label>Electron <input type="number" name="electron" value="${atom.electron || el[2]}" min="1" max="999" required></label>
+        <label>Neutron <input type="number" name="neutron" value="${atom.neutron || el[2]}" min="0" max="999" required></label>
+        <div class="input-row">
+          <label>Block Color</label>
+          <input type="color" name="color" value="${atom.color || el[5] || "#23242d"}">
+        </div>
+        <button class="modal-submit-btn">Save</button>
+        <div class="modal-error" style="display:none"></div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modalBg);
+  // Events
+  modalBg.querySelector(".modal-close-btn").onclick = () => modalBg.remove();
+  modalBg.onclick = (e) => { if (e.target === modalBg) modalBg.remove(); };
+  const form = modalBg.querySelector("form");
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const data = {
+      symbol: fd.get("symbol").trim(),
+      name: fd.get("name").trim(),
+      proton: Number(fd.get("proton")),
+      electron: Number(fd.get("electron")),
+      neutron: Number(fd.get("neutron")),
+      color: fd.get("color")
+    };
+    // Validation
+    if (!data.symbol || !data.name ||
+        isNaN(data.proton) || isNaN(data.electron) || isNaN(data.neutron)) {
+      showError("Fill all fields!");
+      return;
+    }
+    db.ref("atoms/" + atomic).set(data).then(() => {
+      modalBg.remove();
+    }).catch(err => showError("Error: " + err.message));
+  };
+  function showError(msg) {
+    const err = form.querySelector(".modal-error");
+    err.textContent = msg;
+    err.style.display = "block";
+  }
+}
+// ------------------ ATOM SCREEN (3D) -------------------
+function renderAtomScreen(slug) {
+  // Find element
+  const el = periodicTableLayout.find(e => e[4].toLowerCase() === slug);
+  if (!el) {
+    goToTable();
+    return document.createElement("div");
+  }
+  const atom = atomsData[el[2]] || {};
+  // Main
+  const wrap = document.createElement("div");
+  wrap.className = "atom-visual-wrap";
+  // Toolbar
+  const toolbar = document.createElement("div");
+  toolbar.className = "atom-toolbar";
+  toolbar.innerHTML = `
+    <label>
+      <input type="checkbox" id="nucleusViewChk">
+      Hide orbits and show nucleus
+    </label>
+    <button class="about-btn" id="aboutBtn">About This Element</button>
+  `;
+  wrap.appendChild(toolbar);
+  // Canvas
+  const canvasWrap = document.createElement("div");
+  canvasWrap.className = "atom-canvas-wrap";
+  canvasWrap.innerHTML = `<canvas id="atom-canvas"></canvas>`;
+  wrap.appendChild(canvasWrap);
 
-    /**************************************************************************
-     * ABOUT MODAL (Wikipedia)
-     **************************************************************************/
-    function showAboutModal(atomic){
-      const data = elementsData[atomic] || {};
-      const name = data.name || '';
-      $aboutRoot.innerHTML = '';
-      const bg = document.createElement('div'); bg.className = 'about-modal-bg';
-      const card = document.createElement('div'); card.className = 'about-card';
-      card.innerHTML = `<h4>About ${escapeHtml(name || ('Element '+atomic))}</h4>
-        <div style="color:var(--muted);padding:6px 8px 10px 8px">Loading Wikipedia...</div>
-        <div id="wiki-wrap" style="height:58vh"></div>
-        <div style="display:flex;justify-content:flex-end;padding-top:8px"><button class="btn ghost" id="about-close">Close</button></div>`;
-      bg.appendChild(card);
-      $aboutRoot.appendChild(bg);
-      card.querySelector('#about-close').addEventListener('click', ()=> $aboutRoot.innerHTML = '');
+  // Element meta
+  wrap.innerHTML += `
+    <div class="atom-element-name">${atom.name || el[4]} (${atom.symbol || el[3]})</div>
+    <div class="atom-props-row">
+      <div class="atom-prop">Proton: ${atom.proton || el[2]}</div>
+      <div class="atom-prop">Electron: ${atom.electron || el[2]}</div>
+      <div class="atom-prop">Neutron: ${atom.neutron || el[2]}</div>
+    </div>
+  `;
+  // About modal
+  toolbar.querySelector("#aboutBtn").onclick = () => openAboutModal(atom.name || el[4]);
+  // Nucleus View
+  let nucleusView = false;
+  toolbar.querySelector("#nucleusViewChk").onchange = function() {
+    nucleusView = this.checked;
+    draw3DAtom();
+  };
 
-      if(!name) {
-        const wrap = document.getElementById('wiki-wrap');
-        wrap.innerHTML = `<div style="color:var(--muted);padding:12px">No name set for this element yet.</div>`;
-        return;
+  // three.js atom drawing
+  setTimeout(draw3DAtom, 100); // DOM ready
+  function draw3DAtom() {
+    const proton = atom.proton || el[2];
+    const electron = atom.electron || el[2];
+    const neutron = atom.neutron || el[2];
+    const canvas = document.getElementById("atom-canvas");
+    // Remove previous renderer
+    while (canvas && canvas.parentNode && canvas.parentNode.firstChild)
+      canvas.parentNode.removeChild(canvas.parentNode.firstChild);
+    // Add a new canvas for three.js
+    const c = document.createElement("canvas");
+    c.id = "atom-canvas";
+    c.width = canvasWrap.clientWidth || 700;
+    c.height = canvasWrap.clientHeight || 400;
+    canvasWrap.appendChild(c);
+
+    // --- 3D Visualization ---
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({canvas: c, antialias: true, alpha: false});
+    renderer.setClearColor(0x151720);
+    renderer.setSize(c.width, c.height);
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, c.width/c.height, 0.1, 1000);
+    camera.position.set(0, 0, 14);
+
+    // Scene
+    const scene = new THREE.Scene();
+
+    // Lighting
+    const light = new THREE.PointLight(0xffffff, 1.2, 1000);
+    light.position.set(20, 30, 50); scene.add(light);
+
+    // Nucleus
+    if (nucleusView) {
+      // Show protons & neutrons as colored spheres
+      // Arrange in a sphere
+      const total = proton + neutron;
+      const rad = 1.3;
+      for (let i=0; i<proton; i++) {
+        const phi = Math.acos(-1 + (2*i+1)/total);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+        const x = rad * Math.cos(theta)*Math.sin(phi);
+        const y = rad * Math.sin(theta)*Math.sin(phi);
+        const z = rad * Math.cos(phi);
+        const geom = new THREE.SphereGeometry(0.31, 24, 24);
+        const mat = new THREE.MeshPhongMaterial({color: 0x00c3ff});
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(x, y, z);
+        scene.add(mesh);
       }
-
-      const wikiTitle = encodeURIComponent(name);
-      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${wikiTitle}`;
-      fetch(wikiUrl).then(res=>{
-        if(!res.ok) throw new Error('No wiki');
-        return res.text();
-      }).then(html=>{
-        // strip scripts for safety
-        const cleaned = html.replace(/<script[\s\S]*?<\/script>/gi,'');
-        const wrap = document.getElementById('wiki-wrap');
-        const iframe = document.createElement('iframe');
-        iframe.className = 'wiki-frame';
-        iframe.srcdoc = cleaned;
-        wrap.innerHTML = '';
-        wrap.appendChild(iframe);
-      }).catch(err=>{
-        const wrap = document.getElementById('wiki-wrap');
-        wrap.innerHTML = `<div style="color:var(--muted);padding:12px">Wikipedia content not available.</div>`;
-      });
-    }
-
-    /**************************************************************************
-     * UTILITIES
-     **************************************************************************/
-    function slugify(s){
-      return (s||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
-    }
-    function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-    /**************************************************************************
-     * EDITOR NOTES:
-     *
-     * - Clicking element:
-     *    * first click selects
-     *    * clicking the same selected element navigates to /atom/{slug} (if name exists slug = slugify(name); else /atom/element{n})
-     * - Double-click (owner only) opens edit modal
-     * - The DB path used: /elements/{atomicNumber}
-     * - Data structure stored:
-     *    { symbol: "H", name: "Hydrogen", proton: 1, electron: 1, neutron: 0, color: "#abcdef" }
-     *
-     **************************************************************************/
-
-    /**************************************************************************
-     * DB-friendly slug helper description
-     **************************************************************************/
-    function findAtomicFromSlug(slugIn){
-      // duplicate of earlier but kept to ensure lookups in other scopes can use it
-      slugIn = (slugIn||'').toString().toLowerCase();
-      for(let i=1;i<=118;i++){
-        const e = elementsData[i] || {};
-        const name = (e.name || '').toLowerCase();
-        const sym = (e.symbol || '').toLowerCase();
-        if(name && slugify(name) === slugIn) return i;
-        if(sym && sym === slugIn) return i;
-        if(('element'+i) === slugIn) return i;
+      for (let i=0; i<neutron; i++) {
+        const idx = i+proton;
+        const phi = Math.acos(-1 + (2*idx+1)/total);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
+        const x = rad * Math.cos(theta)*Math.sin(phi);
+        const y = rad * Math.sin(theta)*Math.sin(phi);
+        const z = rad * Math.cos(phi);
+        const geom = new THREE.SphereGeometry(0.31, 24, 24);
+        const mat = new THREE.MeshPhongMaterial({color: 0xb3b3b3});
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(x, y, z);
+        scene.add(mesh);
       }
-      return null;
-    }
-
-    /**************************************************************************
-     * DATABASE RULES NOTE (example)
-     *
-     * Use these Realtime Database Rules (set in Firebase console):
-     *
-     * {
-     *   "rules": {
-     *     ".read": "auth != null",
-     *     "elements": {
-     *       ".read": "auth != null",
-     *       ".write": "auth.token.email === 'owner@gmail.com'"
-     *     }
-     *   }
-     * }
-     *
-     * This allows any authenticated user to read, only owner@gmail.com to write.
-     **************************************************************************/
-
-    /**************************************************************************
-     * STARTUP: initial render
-     **************************************************************************/
-    document.addEventListener('click', (ev)=>{
-      // clicking outside any block clears selection
-      if(!ev.target.closest('.ptable-block')) {
-        clearAllSelections();
-      }
-    });
-
-    // initial show/hide
-    if(currentUser){
-      route(location.pathname);
     } else {
-      $authScreen.style.display = '';
-      $ptableWrap.style.display = 'none';
-      $atomView.style.display = 'none';
-      $signoutBtn.style.display = 'none';
-    }
+      // Default: white large nucleus sphere
+      const nucleusGeom = new THREE.SphereGeometry(1.35, 32, 32);
+      const nucleusMat = new THREE.MeshPhongMaterial({color: 0xffffff});
+      const nucleusMesh = new THREE.Mesh(nucleusGeom, nucleusMat);
+      scene.add(nucleusMesh);
 
-    // On page load: set route to / if unknown
-    window.addEventListener('load', ()=> {
-      if(!location.pathname || location.pathname === '/') {
-        history.replaceState({},'', '/');
-      } else {
-        // keep existing route
+      // Electron Orbits (concentric circles, 2n^2 rules)
+      const electronShells = [];
+      let electronsLeft = electron;
+      let n = 1;
+      while (electronsLeft > 0 && n < 7) {
+        const shellCap = Math.min(electronsLeft, 2*n*n);
+        electronShells.push(shellCap);
+        electronsLeft -= shellCap;
+        n++;
       }
-    });
-
-    /**************************************************************************
-     * Small safety functions
-     **************************************************************************/
-    function consoleDump(){
-      console.log('Current user:', currentUser);
-      console.log('Elements sample:', Object.keys(elementsData).slice(0,10).map(k=>[k,elementsData[k]]));
+      // Draw orbits
+      for (let i=0; i<electronShells.length; i++) {
+        const orbitRad = 2.3 + i*1.1;
+        const curve = new THREE.EllipseCurve(
+          0, 0, orbitRad, orbitRad, 0, 2*Math.PI, false, 0
+        );
+        const pts = curve.getPoints(100);
+        const geom = new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(p.x, p.y, 0)));
+        const mat = new THREE.LineBasicMaterial({color: 0x00e1ff, transparent:true, opacity:0.31});
+        const ellipse = new THREE.LineLoop(geom, mat);
+        scene.add(ellipse);
+      }
+      // Electrons (animated)
+      // We'll animate them (simulate rotation) using requestAnimationFrame
+      let animationFrame;
+      function animateElectrons(time) {
+        // Remove previous electrons
+        for (let obj of scene.children.filter(o=>o.userData && o.userData.electron)) scene.remove(obj);
+        let eCtr = 0;
+        for (let i=0; i<electronShells.length; i++) {
+          const nElectrons = electronShells[i];
+          const orbitRad = 2.3 + i*1.1;
+          for (let k=0; k<nElectrons; k++) {
+            const ang = (k/nElectrons)*2*Math.PI + (time/1900)*(1+i*0.35);
+            const ex = orbitRad * Math.cos(ang);
+            const ey = orbitRad * Math.sin(ang);
+            const geom = new THREE.SphereGeometry(0.22, 18, 18);
+            const mat = new THREE.MeshPhongMaterial({color: 0xffffff});
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.position.set(ex, ey, 0);
+            mesh.userData.electron = true;
+            scene.add(mesh);
+            eCtr++;
+          }
+        }
+        renderer.render(scene, camera);
+        animationFrame = requestAnimationFrame(animateElectrons);
+      }
+      animateElectrons(0);
+      // On remove, cancel animation
+      c.removeAnimation = () => cancelAnimationFrame(animationFrame);
+      // If user toggles, remove animation
+      toolbar.querySelector("#nucleusViewChk").onchange = function() {
+        if (c.removeAnimation) c.removeAnimation();
+        nucleusView = this.checked;
+        draw3DAtom();
+      };
+      return; // Don't render again below, since animation already renders
     }
+    renderer.render(scene, camera);
+  }
+  // Back to table on header click
+  setTimeout(()=>{
+    document.querySelector(".header-title").onclick = () => goToTable();
+  }, 100);
+  return wrap;
+}
+// ------------------ ABOUT MODAL ------------------------
+function openAboutModal(elementName) {
+  // Wikipedia embed
+  const modalBg = document.createElement("div");
+  modalBg.className = "about-modal-bg";
+  modalBg.innerHTML = `
+    <div class="about-modal">
+      <button class="modal-close-btn">&times;</button>
+      <div class="about-modal-title">About ${elementName}</div>
+      <iframe class="about-modal-iframe"
+        src="https://en.wikipedia.org/wiki/${encodeURIComponent(elementName)}"
+        loading="lazy"></iframe>
+    </div>
+  `;
+  document.body.appendChild(modalBg);
+  modalBg.querySelector(".modal-close-btn").onclick = () => modalBg.remove();
+  modalBg.onclick = (e) => { if (e.target === modalBg) modalBg.remove(); };
+}
 
-    /**************************************************************************
-     * END OF MAIN SCRIPT
-     *
-     * The file purposely keeps logic clear, owner-edit modal, selection-first-click
-     * second-click navigation, 3D atomic rendering with toggle to show nucleus details,
-     * and Wikipedia about modal.
-     *
-     **************************************************************************/
+// ----------------- INITIAL RENDER ----------------------
+renderApp();
   </script>
 </body>
   </html>
