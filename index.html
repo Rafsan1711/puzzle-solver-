@@ -1,267 +1,167 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="bn">
 <head>
-  <meta charset="UTF-8">
-  <title>3D Periodic Table</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Firebase SDK -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D Periodic Table — Dark</title>
+
+  <!-- three.js must be in the same directory as this file: ./three.js -->
+  <script src="three.js"></script>
+
+  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-  <!-- Three.js -->
-  <script src="three.js"></script>
+
   <style>
-    :root {
-      --bg: #151821;
-      --surface: #232733;
-      --primary: #5e8fff;
-      --block: #232733;
-      --text: #f1f1f1;
-      --muted: #8ca0c7;
-      --modal-bg: rgba(25,28,36,0.97);
-      --danger: #ff5e57;
-      --border: #333b4e;
-      --owner: #ffbe76;
-      --block-gap: 0.46vw;
+    /* Dark, almost-black UI tuned to the user's request */
+    :root{
+      --bg:#07070a;
+      --surface:#0f1220;
+      --muted:#7f8ba9;
+      --primary:#5ea1ff;
+      --accent:#00d8d6;
+      --danger:#ff6b6b;
+      --owner:#ffcc66;
+      --border:#202433;
+      --block-gap:0.45vw;
+      --block-min-size:36px;
     }
-    html, body {
-      background: var(--bg); color: var(--text);
-      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-      margin: 0; min-height: 100vh; width: 100vw; overflow-x: hidden;
+    html,body{height:100%;margin:0;background:var(--bg);color:#eaf0ff;font-family:Inter,Segoe UI,Arial,sans-serif;}
+    /* Auth screen centered */
+    .centered{height:100vh;display:flex;align-items:center;justify-content:center;}
+    .auth-card{background:var(--surface);border-radius:16px;padding:28px 34px;box-shadow:0 10px 40px #0008;text-align:center;max-width:92vw;}
+    .auth-h1{font-size:26px;margin:0 0 10px;color:var(--primary);letter-spacing:0.6px;}
+    .google-btn{background:#0b1222;border:1px solid var(--border);color:var(--muted);padding:12px 18px;border-radius:10px;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:12px;}
+    .google-btn img{height:20px;}
+    .muted{color:var(--muted);font-size:13px;margin-top:8px;}
+
+    /* signout */
+    .signout-btn{position:fixed;right:18px;top:18px;background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 12px;border-radius:10px;cursor:pointer;z-index:60;}
+
+    /* The periodic table container and layout: strict 18 columns, enough rows */
+    #ptable-wrap{display:none;padding:18px 12px 56px 12px;min-height:100vh;}
+    .title{font-size:22px;color:var(--primary);text-align:center;margin:16px 0 8px;}
+    .ptable-grid{
+      margin:0 auto;
+      width:98vw; max-width:1400px; min-width:320px;
+      display:grid;
+      grid-template-columns:repeat(18,1fr);
+      grid-auto-rows:minmax(var(--block-min-size),6vw);
+      gap:var(--block-gap);
+      padding:12px;
+      box-sizing:border-box;
     }
-    .centered {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: var(--bg);
+    .ptable-block{
+      background:linear-gradient(180deg,var(--surface),#121423);
+      border-radius:8px;
+      border:1px solid var(--border);
+      box-shadow:0 6px 16px #0008;
+      position:relative;
+      overflow:hidden;
+      min-width:var(--block-min-size);
+      min-height:var(--block-min-size);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      user-select:none;
+      transition:transform .12s,box-shadow .12s,background .12s;
     }
-    .auth-card {
-      background: var(--surface);
-      padding: 2.5rem 2.5rem; border-radius: 1.5rem; box-shadow: 0 8px 32px #000a;
-      display: flex; flex-direction: column; align-items: center; gap: 2rem;
-      max-width: 95vw;
-    }
-    .auth-card h1 {
-      margin: 0; font-size: 2.2rem; font-weight: bold; letter-spacing: 1px;
-      color: var(--primary); text-shadow: 0 2px 12px #0003;
-    }
-    .google-btn {
-      background: #22242e; color: var(--muted); border: none;
-      border-radius: 0.7rem; font-size: 1.1rem; padding: 0.85em 2.5em 0.85em 3em;
-      font-weight: 500; box-shadow: 0 2px 8px #0002; cursor: pointer;
-      display: flex; align-items: center; transition: background 0.2s; position: relative; outline: none;
-    }
-    .google-btn img {
-      height: 1.7em; position: absolute; left: 1em; background: #fff; border-radius: 100%; padding: 0.15em;
-    }
-    .signout-btn {
-      position: fixed; top: 18px; right: 22px; background: transparent; border: 1px solid var(--border);
-      color: var(--muted); padding: 5px 18px; border-radius: 8px; font-size: 1em; cursor: pointer;
-      z-index: 50; transition: background 0.2s, color 0.2s;
-    }
-    .signout-btn:hover { background: var(--surface); color: var(--danger); }
-    /* Periodic Table Grid */
-    #ptable-main-wrap {
-      min-height: 100vh; width: 100vw; background: var(--bg);
-      display: flex; flex-direction: column; align-items: center;
-      overflow-x: auto;
-    }
-    .ptable-title {
-      text-align: center; margin: 2vw 0 1vw 0; font-size: 2.3em; font-weight: bold; color: var(--primary);
-      letter-spacing: 2px;
-    }
-    .ptable-grid {
-      display: grid; grid-gap: var(--block-gap);
-      grid-template-columns: repeat(18, minmax(32px, 1fr));
-      grid-template-rows: repeat(10, minmax(40px, 7vw));
-      margin: 0 auto 2vw auto; width: 99vw; max-width: 1450px; min-width: 320px;
-      max-height: 88vh; overflow-x: auto; overflow-y: auto; border-radius: 1.5vw;
-      background: none;
-      position: relative;
-    }
-    .ptable-block {
-      background: var(--block);
-      border-radius: 0.5vw; color: var(--text); box-shadow: 0 2px 9px #0001;
-      display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
-      cursor: pointer; position: relative; min-width: 32px; min-height: 38px; overflow: hidden;
-      border: 1px solid var(--border); transition: background 0.13s, box-shadow 0.13s;
-      will-change: background; user-select: none;
-    }
-    .ptable-block:hover, .ptable-block.active {
-      background: #29304a; box-shadow: 0 4px 20px #5e8fff22; z-index: 2;
-    }
-    .ptable-block.owner { border: 2px solid var(--owner); box-shadow: 0 0 0 3px var(--owner)44; }
-    .ptable-block .block-top {
-      width: 100%; display: flex; align-items: center; justify-content: flex-end;
-      padding: 0.2em 0.38em 0 0; font-size: 0.95em; font-weight: bold; position: absolute; top: 0; left: 0;
-      z-index: 2;
-    }
-    .ptable-block .block-atomic { font-size: inherit; }
-    .ptable-block .block-symbol {
-      font-size: 1.11em; font-weight: 600; margin: 0 0 0 0.37em; color: var(--primary); letter-spacing: 1px;
-    }
-    .ptable-block .block-bottom {
-      width: 100%; text-align: right; padding: 0 0.3em 0.15em 0; font-size: 0.86em;
-      opacity: 0.82; font-weight: 400; color: var(--muted);
-      position: absolute; bottom: 0; left: 0; z-index: 2; line-height: 1.12; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .ptable-block .block-number-only {
-      position: absolute; top: 0.5em; left: 0.7em; font-size: 1.13em; opacity: 0.45; font-weight: bold; color: var(--muted);
-    }
-    .ptable-row-label {
-      grid-column: 1 / span 18; color: var(--muted); opacity: 0.48; text-align: left; font-size: 0.78em; margin-left: 0.3em;
-    }
-    /* Lanthanide/Actinide label */
-    .ptable-label {
-      position: absolute; left: 0; font-size: 0.95em; color: var(--muted); opacity: 0.67; z-index: 2;
-      pointer-events: none; font-weight: 500;
-    }
-    .ptable-label.lan {
-      top: calc(7.2 * (7vw + var(--block-gap)));
-      left: 2.2vw;
-    }
-    .ptable-label.act {
-      top: calc(8.2 * (7vw + var(--block-gap)));
-      left: 2.2vw;
-    }
+    .ptable-block:hover{transform:translateY(-4px);box-shadow:0 14px 30px #000b;}
+    .ptable-block.owner{outline:2px solid var(--owner);box-shadow:0 0 0 6px #ffcc6644;}
+    .atomic-num{position:absolute;top:6px;left:8px;font-weight:700;color:var(--muted);font-size:12px;opacity:0.95;}
+    .symbol{font-weight:700;font-size:18px;color:var(--primary);letter-spacing:0.6px;}
+    .fullname{position:absolute;bottom:6px;right:8px;color:var(--muted);font-size:11px;max-width:85%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .selected{box-shadow:0 0 0 4px #5ea1ff33,0 12px 36px #000c;transform:translateY(-2px) scale(1.01);}
+
     /* Modal */
-    .modal-bg {
-      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(20,23,29,0.64); z-index: 90; display: flex; align-items: center; justify-content: center; animation: fadeInBg 0.15s;
-    }
-    @keyframes fadeInBg { from {background: rgba(20,23,29,0);} to {background: rgba(20,23,29,0.64);} }
-    .modal-card {
-      background: var(--modal-bg); color: var(--text); border-radius: 1.1rem; box-shadow: 0 6px 32px #000a;
-      padding: 2rem 2.3rem 1.5rem 2.3rem; min-width: 270px; max-width: 95vw;
-      display: flex; flex-direction: column; gap: 1.1em; animation: modalPopIn 0.18s cubic-bezier(.39,1.5,.64,1); position: relative;
-    }
-    @keyframes modalPopIn { from {transform: translateY(40px) scale(0.93);} to {transform: none;} }
-    .modal-close {
-      position: absolute; top: 15px; right: 22px; background: transparent; border: none; color: var(--muted); font-size: 1.7em;
-      cursor: pointer; transition: color 0.13s; z-index: 2;
-    }
-    .modal-close:hover { color: var(--danger); }
-    .modal-card label { font-size: 1em; color: var(--muted); margin-bottom: 0.3em; }
-    .modal-card input[type="text"], .modal-card input[type="number"] {
-      width: 100%; padding: 0.6em 1.1em; margin-bottom: 0.5em; border-radius: 0.6em;
-      border: 1px solid var(--border); background: #232733; color: var(--text); font-size: 1.05em; outline: none; transition: border .17s;
-    }
-    .modal-card input[type="text"]:focus, .modal-card input[type="number"]:focus {
-      border: 1.5px solid var(--primary); background: #252b39;
-    }
-    .modal-card input[type="color"] {
-      width: 2.1em; height: 2.1em; border-radius: 100%; border: none; outline: 2px solid var(--border); margin-left: 0.6em; background: transparent; cursor: pointer; vertical-align: middle;
-    }
-    .modal-card .row { display: flex; gap: 1.1em; align-items: center; }
-    .modal-card .modal-actions {
-      display: flex; gap: 1em; margin-top: 0.8em; justify-content: flex-end;
-    }
-    .modal-card .modal-actions button {
-      padding: 0.5em 1.7em; border-radius: 0.8em; border: none; background: var(--primary); color: #fff; font-size: 1.02em; font-weight: 500; cursor: pointer; transition: background 0.12s; margin-left: 0.25em;
-    }
-    .modal-card .modal-actions .cancel-btn { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-    /* Atom 3D View */
-    #atom-view-container {
-      width: 100vw; min-height: 100vh; background: var(--bg);
-      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; position: relative; overflow-x: hidden; overflow-y: auto;
-    }
-    #atom-canvas-wrap {
-      width: 100vw; max-width: 620px; margin: 0 auto; height: 60vw; max-height: 62vh; min-height: 320px;
-      display: flex; align-items: center; justify-content: center; background: none; position: relative; touch-action: none;
-    }
-    #atom-toolbar {
-      display: flex; gap: 1.4em; align-items: center; margin: 14px auto 0 auto;
-      padding: 0.55em 1.4em 0.2em 1.4em; background: var(--surface); border-radius: 2em; box-shadow: 0 2px 12px #0002;
-      font-size: 1.05em; color: var(--muted);
-    }
-    #atom-toolbar label { display: flex; align-items: center; gap: 0.6em; cursor: pointer; font-size: 1em; }
-    #atom-toolbar input[type="checkbox"] { accent-color: #00d8d6; width: 1.13em; height: 1.13em; }
-    #atom-legend { margin-top: 0.5em; font-size: 0.97em; color: var(--muted); display: flex; gap: 1.1em; align-items: center; }
-    #atom-legend .dot { display: inline-block; width: 0.94em; height: 0.94em; border-radius: 50%; margin-right: 0.33em; vertical-align: middle; }
-    /* About Modal Animation Up */
-    .about-modal-bg {
-      position: fixed; left: 0; right: 0; bottom: 0; top: 0; background: rgba(20,23,29,0.72); z-index: 120;
-      display: flex; align-items: flex-end; justify-content: center; animation: fadeInBg 0.13s;
-    }
-    .about-modal-card {
-      background: var(--modal-bg); color: var(--text); width: 100vw; max-width: 670px; min-height: 230px; min-width: 220px;
-      border-radius: 2.2em 2.2em 0 0; box-shadow: 0 -8px 40px #000c; padding: 1.5em 0.7em 0.7em 0.7em;
-      animation: aboutPopIn 0.22s cubic-bezier(.39,1.5,.64,1); position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: stretch;
-    }
-    @keyframes aboutPopIn { from {transform: translateY(100%);} to {transform: none;} }
-    .about-modal-close { position: absolute; top: 11px; right: 22px; background: transparent; border: none; color: var(--muted); font-size: 2em; cursor: pointer; transition: color 0.13s; z-index: 2; }
-    .about-modal-close:hover { color: var(--danger); }
-    .about-modal-card h2 { margin: 0 0 1em 1em; font-size: 1.2em; color: var(--primary); font-weight: 600; letter-spacing: 1px; }
-    .about-wiki-iframe { width: 100%; min-height: 40vh; border: none; border-radius: 0 0 2em 2em; background: #fff; margin-bottom: 0.7em; }
-    .about-modal-card .about-loading { color: var(--muted); text-align: center; padding: 2em 0; }
-    /* About button */
-    #about-btn {
-      position: relative; margin: 1.7em auto 0 auto; display: block; background: var(--surface); color: var(--primary);
-      border: none; border-radius: 1.4em; font-size: 1.07em; font-weight: 500; padding: 0.7em 2.3em; cursor: pointer; box-shadow: 0 2px 10px #0002; transition: background 0.14s, color 0.14s; z-index: 5;
-    }
-    #about-btn:hover { background: var(--primary); color: #fff; }
-    /* Responsive */
-    @media (max-width: 950px) {
-      .ptable-grid { grid-template-rows: repeat(10, minmax(35px, 8vw)); }
-      .modal-card { padding: 1.2rem 1.2rem 1.1rem 1.2rem; }
-      #atom-canvas-wrap { height: 70vw; }
-    }
-    @media (max-width: 700px) {
-      .ptable-grid { grid-template-rows: repeat(10, minmax(29px, 9vw)); }
-      #atom-canvas-wrap { max-width: 99vw; height: 84vw; min-height: 210px; }
-      .modal-card { min-width: 95vw; }
-    }
-    @media (max-width: 500px) {
-      .ptable-grid { grid-gap: 0.17vw; }
-      #atom-toolbar { padding: 0.5em 0.6em 0.2em 0.6em; font-size: 1em;}
-      .modal-card { padding: 0.8rem 0.3rem 1.1rem 0.5rem; }
-      .about-modal-card { min-height: 120px; }
-    }
-    @media (max-width: 400px) {
-      #atom-canvas-wrap { min-height: 90px; }
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:140;}
+    .modal-card{background:linear-gradient(180deg,#0b0e1a, #111324);padding:18px;border-radius:12px;min-width:280px;color:#eaf0ff;border:1px solid var(--border);box-shadow:0 12px 36px #000d;}
+    .modal-card h3{margin:0 0 8px;color:var(--primary);font-size:18px;}
+    .modal-row{display:flex;gap:10px;margin-top:10px;}
+    .modal-row .col{flex:1;display:flex;flex-direction:column;}
+    .modal-input{padding:10px;border-radius:8px;border:1px solid var(--border);background:#0d1220;color:var(--muted);outline:none;}
+    .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;}
+    .btn{padding:8px 14px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;}
+    .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+
+    /* Atom view */
+    #atom-view{display:none;padding:18px 12px 56px 12px;min-height:100vh;box-sizing:border-box;}
+    #atom-canvas-wrap{width:100%;max-width:720px;margin:10px auto 6px auto;height:56vh;min-height:300px;background:transparent;border-radius:12px;display:flex;align-items:center;justify-content:center;}
+    #atom-toolbar{display:flex;gap:14px;align-items:center;justify-content:center;margin:8px auto;padding:8px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--border);max-width:720px;}
+    #atom-toolbar label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px;}
+    #atom-legend{display:flex;gap:12px;align-items:center;justify-content:center;color:var(--muted);font-size:13px;margin-top:8px;}
+    .dot{width:12px;height:12px;border-radius:100%;display:inline-block;margin-right:6px;vertical-align:middle;}
+
+    /* About modal (slide up) */
+    .about-modal-bg{position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0.6);z-index:150;}
+    .about-card{background:linear-gradient(180deg,#0b0e1a,#0f1220);width:100%;max-width:760px;border-radius:18px 18px 0 0;padding:12px;border:1px solid var(--border)}
+    .about-card h4{margin:8px 0;color:var(--primary)}
+    .wiki-frame{width:100%;height:60vh;border-radius:8px;border:0;background:#fff;overflow:auto;}
+
+    /* small tweaks */
+    @media (max-width:720px){
+      .ptable-grid{grid-auto-rows:minmax(28px,12vw)}
+      #atom-canvas-wrap{height:70vw}
     }
   </style>
 </head>
 <body>
-  <!-- Auth Screen -->
-  <div id="auth-screen" class="centered" style="display:none;">
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen" class="centered">
     <div class="auth-card">
-      <h1>3D Periodic Table</h1>
-      <button class="google-btn" id="google-signin-btn">
-        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo">
-        Sign in with Google
+      <div class="auth-h1">3D Periodic Table</div>
+      <button id="google-signin" class="google-btn">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"> Sign in with Google
       </button>
-      <div style="margin-top:1.4em;font-size:0.98em;color:var(--muted);opacity:0.68;">
-        Visualize atoms in 3D &mdash; Edit data as <b>owner</b>
-      </div>
+      <div class="muted">Sign in to see the periodic table. Owner can edit entries.</div>
     </div>
   </div>
-  <button id="signout-btn" class="signout-btn" style="display:none;">Sign Out</button>
-  <div id="ptable-main-wrap" style="display:none;">
-    <div class="ptable-title">Periodic Table of the Elements</div>
-    <div class="ptable-grid" id="ptable-grid"></div>
-    <div class="ptable-label lan">*Lanthanides</div>
-    <div class="ptable-label act">*Actinides</div>
+
+  <!-- SIGN OUT -->
+  <button id="signout-btn" class="signout-btn" style="display:none">Sign out</button>
+
+  <!-- PERIODIC TABLE -->
+  <div id="ptable-wrap">
+    <div class="title">Periodic Table of the Elements</div>
+    <div class="ptable-grid" id="ptable-grid" aria-hidden="true"></div>
+    <!-- Labels for lanthanides/actinides -->
+    <div style="color:var(--muted);font-size:13px;margin:12px auto;max-width:1400px;text-align:left">* Lanthanides / Actinides shown on separate rows (standard layout)</div>
   </div>
-  <div id="atom-view-container" style="display:none;">
-    <div id="atom-toolbar" style="display:flex;">
-      <label>
-        <input type="checkbox" id="nucleus-detail-toggle">
-        Hide orbits and show nucleus details
-      </label>
+
+  <!-- ATOM VIEW -->
+  <div id="atom-view">
+    <div id="atom-toolbar">
+      <label><input type="checkbox" id="nucleus-toggle"> Hide orbits and show nucleus (protons/neutrons)</label>
+      <label style="color:var(--muted);font-size:13px">Selected atom data renders from database</label>
     </div>
     <div id="atom-canvas-wrap"></div>
-    <div id="atom-legend" style="display:none;">
-      <span><span class="dot" style="background:#f44336;"></span>Proton</span>
-      <span><span class="dot" style="background:#ffc107;"></span>Neutron</span>
-      <span><span class="dot" style="background:#40c4ff;"></span>Electron</span>
+    <div id="atom-legend" style="display:none">
+      <div><span class="dot" style="background:#f44336"></span> Proton</div>
+      <div><span class="dot" style="background:#ffc107"></span> Neutron</div>
+      <div><span class="dot" style="background:#41c1ff"></span> Electron</div>
     </div>
-    <button id="about-btn">About</button>
+    <div style="text-align:center"><button id="about-btn" class="btn" style="margin-top:14px">About</button></div>
   </div>
+
+  <!-- modal containers -->
   <div id="modal-root"></div>
-  <div id="about-modal-root"></div>
+  <div id="about-root"></div>
+
   <script>
-    // Owner email
+    /**************************************************************************
+     * CONFIG
+     *
+     * 1) Put your Firebase project config into firebaseConfig below
+     * 2) Place three.js (minified) in same folder ( ./three.js )
+     * 3) Change OWNER_EMAIL if needed (owner@gmail.com by default)
+     *
+     **************************************************************************/
+
+    // Owner email who can edit
     const OWNER_EMAIL = "samiulhaquerafsan@gmail.com";
-    // <--- REPLACE THIS WITH YOUR OWN FIREBASE CONFIG --->
+
     const firebaseConfig = {
       apiKey: "AIzaSyA_kIamFMEt3CVrw8dkO6uBsVBoa7SHsng",
     authDomain: "chatstudio-e6cfd.firebaseapp.com",
@@ -273,455 +173,706 @@
     measurementId: "G-STBZWFVDRX"
     };
 
-    // --- GLOBAL STATE ---
-    let app = null, auth = null, db = null;
+    /**************************************************************************
+     * GLOBAL STATE
+     **************************************************************************/
+    let app, auth, db;
     let currentUser = null;
-    let elementsData = {};
+    let elementsData = {}; // {1:{symbol,name,proton,electron,neutron,color}}
+    let selectedAtomic = null; // selection state: choose then click to open
     let currentRoute = '/';
-    let unsubscribeDB = null;
-    // UI
-    const $authScreen = document.getElementById('auth-screen');
-    const $googleBtn = document.getElementById('google-signin-btn');
-    const $signoutBtn = document.getElementById('signout-btn');
-    const $ptableMainWrap = document.getElementById('ptable-main-wrap');
-    const $ptableGrid = document.getElementById('ptable-grid');
-    const $atomView = document.getElementById('atom-view-container');
-    const $atomToolbar = document.getElementById('atom-toolbar');
-    const $atomLegend = document.getElementById('atom-legend');
-    const $atomCanvasWrap = document.getElementById('atom-canvas-wrap');
-    const $nucleusToggle = document.getElementById('nucleus-detail-toggle');
-    const $aboutBtn = document.getElementById('about-btn');
-    const $modalRoot = document.getElementById('modal-root');
-    const $aboutModalRoot = document.getElementById('about-modal-root');
+    let atomRenderState = { atomic: null, renderer: null, scene: null, camera: null, animId: null };
 
-    // ---- FULL PTABLE LAYOUT ----
-    // Each entry: [row(1-based), col(1-based), atomic]
-    // Lanthanides: row 8, col 4-17 (atomic 57-71)
-    // Actinides:   row 9, col 4-17 (atomic 89-103)
-    const PTABLE = [];
-    // 1st row
-    PTABLE.push([1,1,1],[1,18,2]);
-    // 2nd row
-    PTABLE.push([2,1,3],[2,2,4],
-      [2,13,5],[2,14,6],[2,15,7],[2,16,8],[2,17,9],[2,18,10]);
-    // 3rd row
-    PTABLE.push([3,1,11],[3,2,12],
-      [3,13,13],[3,14,14],[3,15,15],[3,16,16],[3,17,17],[3,18,18]);
-    // 4th row
-    for(let i=19,c=1;i<=36;i++,c++)PTABLE.push([4,c,i]);
-    // 5th row
-    for(let i=37,c=1;i<=54;i++,c++)PTABLE.push([5,c,i]);
-    // 6th row (La–Lu in lanthanide row, Hf–Rn in main)
-    PTABLE.push([6,1,55],[6,2,56]);
-    for(let i=72,c=4;i<=86;i++,c++)PTABLE.push([6,c,i]);
-    // 7th row (Ac–Lr in actinide row, Rf–Og in main)
-    PTABLE.push([7,1,87],[7,2,88]);
-    for(let i=104,c=4;i<=118;i++,c++)PTABLE.push([7,c,i]);
-    // Lanthanides (La–Lu)
-    for(let i=57,c=4;i<=71;i++,c++)PTABLE.push([8,c,i]);
-    // Actinides (Ac–Lr)
-    for(let i=89,c=4;i<=103;i++,c++)PTABLE.push([9,c,i]);
-    // Fill d-block gaps (main group elements)
-    // 6th row: 3–17 (3rd col), La placeholder
-    PTABLE.push([6,3,57]);
-    // 7th row: 3–17 (3rd col), Ac placeholder
-    PTABLE.push([7,3,89]);
-    // Element info (symbol, name, color)
-    const ELEMENTS_INFO = {
-      1: {symbol: "H", name: "Hydrogen", color: "#90ee90"},
-      2: {symbol: "He", name: "Helium", color: "#ffd7d7"},
-      3: {symbol: "Li", name: "Lithium", color: "#fbb7b7"},
-      4: {symbol: "Be", name: "Beryllium", color: "#fbe7b7"},
-      5: {symbol: "B", name: "Boron", color: "#eafbb7"},
-      6: {symbol: "C", name: "Carbon", color: "#b7fbdf"},
-      7: {symbol: "N", name: "Nitrogen", color: "#b7e2fb"},
-      8: {symbol: "O", name: "Oxygen", color: "#b7c1fb"},
-      9: {symbol: "F", name: "Fluorine", color: "#cab7fb"},
-      10: {symbol: "Ne", name: "Neon", color: "#fbb7ee"},
-      // ... (fill more for launch)
-      57: {symbol: "La", name: "Lanthanum", color: "#b7f9e9"},
-      58: {symbol: "Ce", name: "Cerium", color: "#b7f2f9"},
-      71: {symbol: "Lu", name: "Lutetium", color: "#b7e9f9"},
-      89: {symbol: "Ac", name: "Actinium", color: "#b7e9f2"},
-      103: {symbol: "Lr", name: "Lawrencium", color: "#b7f9ea"},
-      118: {symbol: "Og", name: "Oganesson", color: "#fce6fc"}
+    // Layout for classic periodic table:
+    // rows 1..9, cols 1..18. Lanthanides row 8 col 4..17 (57..71). Actinides row 9 col 4..17 (89..103)
+    const PTABLE_LAYOUT = (function(){
+      const cells = [];
+      // row1
+      cells.push([1,1,1],[1,18,2]);
+      // row2
+      cells.push([2,1,3],[2,2,4],[2,13,5],[2,14,6],[2,15,7],[2,16,8],[2,17,9],[2,18,10]);
+      // row3
+      cells.push([3,1,11],[3,2,12],[3,13,13],[3,14,14],[3,15,15],[3,16,16],[3,17,17],[3,18,18]);
+      // row4 (19..36)
+      for(let i=19, c=1;i<=36;i++,c++) cells.push([4,c,i]);
+      // row5 (37..54)
+      for(let i=37,c=1;i<=54;i++,c++) cells.push([5,c,i]);
+      // row6: 55,56 at col1,2 then 72..86 at 4..18; placeholder at col3 is 57 (La)
+      cells.push([6,1,55],[6,2,56]);
+      for(let i=72,c=4;i<=86;i++,c++) cells.push([6,c,i]);
+      cells.push([6,3,57]);
+      // row7: 87,88 at col1,2 then 104..118 at 4..18; placeholder at col3 is 89 (Ac)
+      cells.push([7,1,87],[7,2,88]);
+      for(let i=104,c=4;i<=118;i++,c++) cells.push([7,c,i]);
+      cells.push([7,3,89]);
+      // lanthanides row (row8) 57..71 at cols 4..18
+      for(let i=57,c=4;i<=71;i++,c++) cells.push([8,c,i]);
+      // actinides row (row9) 89..103 at cols 4..18
+      for(let i=89,c=4;i<=103;i++,c++) cells.push([9,c,i]);
+      return cells;
+    })();
+
+    // Minimal placeholder info (we will NOT prefill names — per your request, blocks start with numbers only).
+    // Only add colors for a few to avoid fully empty UI for testing; owner should edit to add data.
+    const DEFAULT_COLORS = {
+      1:"#0d4",2:"#ff7",3:"#f77",4:"#ffd27f",5:"#b5f",6:"#aaa",7:"#9cf",8:"#9ff",9:"#cfc",10:"#ff9",
+      26:"#e6e6e6",79:"#ffd77f",118:"#f2d9ff"
     };
 
-    // --- FIREBASE INIT ---
+    /**************************************************************************
+     * FIREBASE INIT
+     **************************************************************************/
     firebase.initializeApp(firebaseConfig);
     app = firebase.app();
     auth = firebase.auth();
     db = firebase.database();
 
-    auth.onAuthStateChanged(user => {
+    /**************************************************************************
+     * UI ELEMENTS
+     **************************************************************************/
+    const $authScreen = document.getElementById('auth-screen');
+    const $googleSignin = document.getElementById('google-signin');
+    const $signoutBtn = document.getElementById('signout-btn');
+    const $ptableWrap = document.getElementById('ptable-wrap');
+    const $ptableGrid = document.getElementById('ptable-grid');
+    const $atomView = document.getElementById('atom-view');
+    const $atomCanvasWrap = document.getElementById('atom-canvas-wrap');
+    const $nucleusToggle = document.getElementById('nucleus-toggle');
+    const $atomLegend = document.getElementById('atom-legend');
+    const $modalRoot = document.getElementById('modal-root');
+    const $aboutRoot = document.getElementById('about-root');
+    const $aboutBtn = document.getElementById('about-btn');
+
+    /**************************************************************************
+     * AUTH HANDLING
+     **************************************************************************/
+    auth.onAuthStateChanged(user=>{
       currentUser = user;
-      if(user) {
-        showSignOut(); showPeriodicTable();
-        listenPeriodicTable();
-        route(location.pathname, true);
+      if(user){
+        // show periodic table
+        $authScreen.style.display = "none";
+        $signoutBtn.style.display = "";
+        $ptableWrap.style.display = "";
+        $atomView.style.display = "none";
+        // start listening DB
+        startDbListener();
+        // route to current
+        route(location.pathname);
       } else {
-        showAuthScreen();
-        cleanMainScreens();
+        // show auth
+        $authScreen.style.display = "";
+        $signoutBtn.style.display = "none";
+        $ptableWrap.style.display = "none";
+        $atomView.style.display = "none";
+        elementsData = {};
+        stopDbListener();
       }
     });
-    function showAuthScreen() {
-      $authScreen.style.display = "";
-      $ptableMainWrap.style.display = "none";
-      $atomView.style.display = "none";
-      $signoutBtn.style.display = "none";
-    }
-    function showSignOut() { $signoutBtn.style.display = ""; }
-    function cleanMainScreens() {
-      $ptableMainWrap.style.display = "none";
-      $atomView.style.display = "none";
-    }
-    $googleBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-    $signoutBtn.onclick = () => auth.signOut();
 
-    // --- PERIODIC TABLE LISTEN ---
-    function listenPeriodicTable() {
-      if (unsubscribeDB) unsubscribeDB();
-      unsubscribeDB = db.ref('elements').on('value', snap => {
-        elementsData = snap.val() || {};
-        for (let i=1; i<=118; ++i) {
-          if (!elementsData[i]) elementsData[i] = {};
-          if (!elementsData[i].symbol && ELEMENTS_INFO[i]) elementsData[i].symbol = ELEMENTS_INFO[i].symbol;
-          if (!elementsData[i].name && ELEMENTS_INFO[i]) elementsData[i].name = ELEMENTS_INFO[i].name;
-          if (!elementsData[i].color && ELEMENTS_INFO[i]) elementsData[i].color = ELEMENTS_INFO[i].color;
+    $googleSignin.addEventListener('click', ()=> {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider).catch(err=>{
+        alert("Sign in failed: "+err.message);
+        console.error(err);
+      });
+    });
+    $signoutBtn.addEventListener('click', ()=> auth.signOut());
+
+    /**************************************************************************
+     * DATABASE LISTENERS & HELPERS
+     **************************************************************************/
+    let dbUnsub = null;
+    function startDbListener(){
+      if(dbUnsub) return;
+      const ref = db.ref('elements');
+      dbUnsub = ref.on('value', snap=>{
+        const val = snap.val() || {};
+        // Ensure elementsData has 1..118 entries
+        for(let i=1;i<=118;i++){
+          if(!val[i]) {
+            // keep empty object (no prefilled symbol/name unless owner sets)
+            if(!elementsData[i]) elementsData[i] = {};
+            if(!elementsData[i].color && DEFAULT_COLORS[i]) elementsData[i].color = DEFAULT_COLORS[i];
+          } else {
+            // copy remote into local
+            elementsData[i] = Object.assign({}, elementsData[i] || {}, val[i]);
+          }
         }
-        if (currentRoute === '/' || currentRoute === '/ptable') renderPeriodicTable();
-        if (currentRoute.startsWith('/atom/')) updateAtomScreenData();
+        // render views depending on current route
+        if(currentRoute === '/' || currentRoute === '/ptable') renderPeriodicTable();
+        if(currentRoute.startsWith('/atom/')) {
+          // update current atom view
+          const slug = currentRoute.slice(6);
+          const atomic = findAtomicFromSlug(slug);
+          if(atomic) showAtom(atomic); // will re-render
+        }
       });
     }
+    function stopDbListener(){
+      if(dbUnsub){
+        db.ref('elements').off('value', dbUnsub);
+        dbUnsub = null;
+      }
+    }
 
-    // --- ROUTING ---
-    window.onpopstate = function() { route(location.pathname,false); };
-    function route(path, isFirst=false) {
-      if (!currentUser) { showAuthScreen(); return; }
+    /**************************************************************************
+     * ROUTING (simple client-side)
+     **************************************************************************/
+    window.onpopstate = ()=> route(location.pathname);
+    function route(path){
       currentRoute = path;
-      if (path === '/' || path === '/ptable') {
-        renderPeriodicTable();
-        $ptableMainWrap.style.display = "";
+      if(!currentUser) {
+        $authScreen.style.display = "";
+        $ptableWrap.style.display = "none";
         $atomView.style.display = "none";
-      } else if (path.match(/^\/([a-z0-9\-]+)$/i)) {
-        let slug = path.slice(1).toLowerCase();
-        showAtomScreen(slug);
-      } else {
-        history.replaceState({}, '', '/');
-        renderPeriodicTable();
-        $ptableMainWrap.style.display = "";
-        $atomView.style.display = "none";
-      }
-    }
-    function pushRoute(url) {
-      history.pushState({}, '', url); route(url);
-    }
-
-    // ---- RENDER PERIODIC TABLE ----
-    function renderPeriodicTable() {
-      $authScreen.style.display = "none";
-      $ptableMainWrap.style.display = "";
-      $atomView.style.display = "none";
-      $ptableGrid.innerHTML = "";
-      // Build grid
-      let gridMap = {};
-      for (let cell of PTABLE) {
-        let [row, col, atomic] = cell;
-        gridMap[`${row}-${col}`] = atomic;
-      }
-      let maxRow = 9, maxCol = 18;
-      for (let r = 1; r <= maxRow; ++r) {
-        for (let c = 1; c <= maxCol; ++c) {
-          let atomic = gridMap[`${r}-${c}`];
-          let el = null;
-          if (atomic) {
-            let data = elementsData[atomic] || {};
-            let isOwner = currentUser && currentUser.email === OWNER_EMAIL;
-            let color = data.color || "#232733";
-            el = document.createElement('div');
-            el.className = "ptable-block";
-            if (isOwner) el.classList.add('owner');
-            el.style.background = color || "var(--block)";
-            el.tabIndex = 0;
-            el.setAttribute('data-atomic', atomic);
-            el.setAttribute('role', 'button');
-            if (data.symbol && data.name) {
-              el.innerHTML = `
-                <div class="block-top">
-                  <span class="block-atomic">${atomic}</span>
-                  <span class="block-symbol">${data.symbol}</span>
-                </div>
-                <div class="block-bottom">${data.name}</div>
-              `;
-            } else {
-              el.innerHTML = `<span class="block-number-only">${atomic}</span>`;
-            }
-            let clickTimer = null;
-            el.onclick = (e) => {
-              if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-              clickTimer = setTimeout(() => {
-                pushRoute('/' + (data.name ? slugify(data.name) : 'element'+atomic));
-              }, 210);
-            };
-            el.ondblclick = (e) => {
-              if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-              if (currentUser && currentUser.email === OWNER_EMAIL)
-                showEditModal(atomic);
-            };
-          } else {
-            el = document.createElement('div');
-            el.style.background = 'transparent';
-            el.style.pointerEvents = 'none';
-          }
-          $ptableGrid.appendChild(el);
-        }
-      }
-    }
-
-    // --- EDIT MODAL FOR OWNER ---
-    function showEditModal(atomic) {
-      let data = elementsData[atomic] || {};
-      let modal = document.createElement('div');
-      modal.className = "modal-bg";
-      modal.innerHTML = `
-        <div class="modal-card">
-          <button class="modal-close" title="Close">&times;</button>
-          <h2>Edit Element #${atomic}</h2>
-          <form id="edit-form">
-            <label>Short Name (symbol):<br>
-              <input type="text" name="symbol" required maxlength="3" value="${data.symbol || ''}" autocomplete="off">
-            </label>
-            <label>Full Name:<br>
-              <input type="text" name="name" required maxlength="18" value="${data.name || ''}" autocomplete="off">
-            </label>
-            <div class="row">
-              <label>Proton:
-                <input type="number" name="proton" min="1" max="300" required value="${data.proton || atomic}">
-              </label>
-              <label>Electron:
-                <input type="number" name="electron" min="1" max="300" required value="${data.electron || atomic}">
-              </label>
-              <label>Neutron:
-                <input type="number" name="neutron" min="0" max="400" required value="${data.neutron || atomic}">
-              </label>
-            </div>
-            <div class="row" style="margin-top:0.3em;">
-              <label>Block Color:
-                <input type="color" name="color" value="${data.color || '#232733'}">
-              </label>
-            </div>
-            <div class="modal-actions">
-              <button type="button" class="cancel-btn">Cancel</button>
-              <button type="submit">Save</button>
-            </div>
-          </form>
-        </div>
-      `;
-      modal.querySelector('.modal-close').onclick = modal.querySelector('.cancel-btn').onclick = () => {$modalRoot.innerHTML = '';};
-      modal.querySelector('#edit-form').onsubmit = function(e){
-        e.preventDefault();
-        let fd = new FormData(this);
-        let symbol = fd.get('symbol').trim();
-        let name = fd.get('name').trim();
-        let proton = parseInt(fd.get('proton'));
-        let electron = parseInt(fd.get('electron'));
-        let neutron = parseInt(fd.get('neutron'));
-        let color = fd.get('color');
-        if (!symbol || !name) return;
-        db.ref('elements/'+atomic).update({symbol,name,proton,electron,neutron,color}).then(()=>{$modalRoot.innerHTML='';});
-      };
-      $modalRoot.innerHTML = '';
-      $modalRoot.appendChild(modal);
-    }
-
-    // --- ATOM 3D SCREEN ---
-    function showAtomScreen(slug) {
-      $authScreen.style.display = "none";
-      $ptableMainWrap.style.display = "none";
-      $atomView.style.display = "";
-      $atomCanvasWrap.innerHTML = "";
-      $aboutBtn.style.display = "";
-      let atomic = null, found = false;
-      slug = slug.toLowerCase();
-      for (let i=1; i<=118; ++i) {
-        let nm = (elementsData[i]?.name || ELEMENTS_INFO[i]?.name || '').toLowerCase();
-        let sym = (elementsData[i]?.symbol || '').toLowerCase();
-        if (slugify(nm) === slug || sym === slug || ('element'+i)===slug) {
-          atomic = i; found = true; break;
-        }
-      }
-      if (!found) {
-        $atomCanvasWrap.innerHTML = `<div style="color:var(--muted);text-align:center;margin-top:2em;">Element not found.</div>`;
-        $atomToolbar.style.display = "none"; $atomLegend.style.display = "none";
         return;
       }
-      renderAtom3D(atomic);
-      $atomToolbar.style.display = "";
-      $atomLegend.style.display = $nucleusToggle.checked ? "" : "none";
-      $nucleusToggle.checked = false;
-      $nucleusToggle.onchange = () => {
-        renderAtom3D(atomic, $nucleusToggle.checked);
-        $atomLegend.style.display = $nucleusToggle.checked ? "" : "none";
-      };
-      $aboutBtn.onclick = () => { showAboutModal(atomic); };
-      updateAtomScreenData = () => { renderAtom3D(atomic, $nucleusToggle.checked); };
-    }
-    let atom3DObj = null, atomRenderer = null, atomScene = null, atomCamera = null, atomAnimId = null;
-    function renderAtom3D(atomic, nucleusDetail=false) {
-      if (atom3DObj) { if(atomRenderer && atomRenderer.dispose) atomRenderer.dispose(); atom3DObj=null; }
-      if(atomAnimId) cancelAnimationFrame(atomAnimId);
-      $atomCanvasWrap.innerHTML = "";
-      let w = Math.min($atomCanvasWrap.offsetWidth || 420, 560);
-      let h = Math.min($atomCanvasWrap.offsetHeight || 380, 520);
-      let canvas = document.createElement('canvas');
-      canvas.style.width = "100%"; canvas.style.height = "100%"; canvas.width = w; canvas.height = h;
-      $atomCanvasWrap.appendChild(canvas);
-      let data = elementsData[atomic] || {};
-      let protons = parseInt(data.proton) || atomic;
-      let electrons = parseInt(data.electron) || atomic;
-      let neutrons = parseInt(data.neutron) || atomic;
-      atomRenderer = new THREE.WebGLRenderer({canvas, alpha: true, antialias: true});
-      atomRenderer.setClearColor(0x151821, 1);
-      atomRenderer.setSize(w, h, false);
-      atomScene = new THREE.Scene();
-      atomCamera = new THREE.PerspectiveCamera(45, w/h, 0.1, 1000);
-      atomCamera.position.set(0, 0, 7);
-      let ambient = new THREE.AmbientLight(0xffffff, 0.7);
-      let dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(6, 6, 8);
-      atomScene.add(ambient, dir);
-      let nucleusGroup = new THREE.Group();
-      if (nucleusDetail) {
-        let pRadius = 0.23, nRadius = 0.21;
-        let nuclRadius = 0.7 + 0.06*Math.sqrt(protons+neutrons);
-        for (let i=0; i<protons+neutrons; ++i) {
-          let isProton = (i<protons);
-          let phi = Math.acos(-1 + 2*(i+0.5)/(protons+neutrons));
-          let theta = Math.PI * (1 + Math.sqrt(5)) * i;
-          let r = nuclRadius * 0.82;
-          let x = r * Math.cos(theta) * Math.sin(phi);
-          let y = r * Math.sin(theta) * Math.sin(phi);
-          let z = r * Math.cos(phi);
-          let geom = new THREE.SphereGeometry(isProton?pRadius:nRadius, 18, 18);
-          let mat = new THREE.MeshPhongMaterial({color: isProton?0xf44336:0xffc107});
-          let mesh = new THREE.Mesh(geom, mat);
-          mesh.position.set(x, y, z); nucleusGroup.add(mesh);
+      if(path === '/' || path === '/ptable'){
+        $ptableWrap.style.display = "";
+        $atomView.style.display = "none";
+        renderPeriodicTable();
+      } else if(path.startsWith('/atom/')){
+        const slug = path.slice(6);
+        const atomic = findAtomicFromSlug(slug);
+        if(atomic){
+          $ptableWrap.style.display = "none";
+          $atomView.style.display = "";
+          showAtom(atomic);
+        } else {
+          // unknown slug -> fallback home
+          history.replaceState({},'', '/');
+          route('/');
         }
       } else {
-        let nuclRadius = 0.85 + 0.08*Math.sqrt(protons+neutrons);
-        let sphere = new THREE.Mesh(
-          new THREE.SphereGeometry(nuclRadius, 38, 24),
-          new THREE.MeshPhongMaterial({color: 0xffffff, shininess: 56})
-        );
-        nucleusGroup.add(sphere);
+        // unknown -> go home
+        history.replaceState({},'', '/');
+        route('/');
       }
-      atomScene.add(nucleusGroup);
-      let electronGroup = new THREE.Group();
-      if (!nucleusDetail) {
-        let electronsLeft = electrons, shells = [], shellCap = [2,8,18,32,50,72,98];
-        for(let n=0; electronsLeft>0 && n<shellCap.length; ++n) {
-          let count = Math.min(electronsLeft, shellCap[n]);
-          shells.push(count); electronsLeft -= count;
-        }
-        let baseRadius = 1.4 + 0.15*Math.sqrt(protons+neutrons);
-        for(let s=0; s<shells.length; ++s) {
-          let shellR = baseRadius+ s*0.65;
-          let ringGeom = new THREE.TorusGeometry(shellR, 0.02, 10, 80);
-          let ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({color: 0x40c4ff, transparent:true, opacity:0.33}));
-          ring.rotation.x = Math.PI/2; electronGroup.add(ring);
-        }
-        atom3DObj = {electronMeshes:[]};
-        for(let s=0; s<shells.length; ++s) {
-          let n = shells[s], shellR = baseRadius+s*0.65;
-          for(let e=0; e<n; ++e) {
-            let theta = (2*Math.PI/n)*e;
-            let phi = Math.PI/4 + (s%2)*Math.PI/8;
-            let geom = new THREE.SphereGeometry(0.11, 12, 12);
-            let mat = new THREE.MeshPhongMaterial({color:0x40c4ff, shininess:59});
-            let mesh = new THREE.Mesh(geom, mat);
-            mesh.userData = {shell:s, e:e, n:n, shellR, baseTheta:theta, basePhi:phi+0.12*e};
-            mesh.position.set(
-              shellR*Math.cos(theta)*Math.sin(phi),
-              shellR*Math.sin(theta)*Math.sin(phi),
-              shellR*Math.cos(phi)
-            );
-            electronGroup.add(mesh);
-            atom3DObj.electronMeshes.push(mesh);
-          }
-        }
-      }
-      atomScene.add(electronGroup);
-      let isDragging = false, lastX=0, lastY=0, rotX=0, rotY=0;
-      canvas.onpointerdown = function(e) { isDragging = true; lastX = e.clientX; lastY = e.clientY; };
-      canvas.onpointerup = function(e) { isDragging = false; };
-      canvas.onpointerleave = function(e) { isDragging = false; };
-      canvas.onpointermove = function(e) {
-        if(!isDragging) return;
-        let dx = e.clientX-lastX, dy = e.clientY-lastY;
-        rotY += dx*0.012; rotX += dy*0.012;
-        rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
-        lastX = e.clientX; lastY = e.clientY;
-      };
-      function animateAtom() {
-        if (atom3DObj && atom3DObj.electronMeshes) {
-          let t = performance.now()/1200;
-          atom3DObj.electronMeshes.forEach(mesh=>{
-            let {shell,e,n,shellR,baseTheta,basePhi} = mesh.userData;
-            let theta = baseTheta + t*(1.1+0.13*shell);
-            let phi = basePhi + Math.sin(t*0.3+shell)*0.19;
-            mesh.position.set(
-              shellR*Math.cos(theta)*Math.sin(phi),
-              shellR*Math.sin(theta)*Math.sin(phi),
-              shellR*Math.cos(phi)
-            );
-          });
-        }
-        atomScene.rotation.y = rotY; atomScene.rotation.x = rotX;
-        atomRenderer.render(atomScene, atomCamera);
-        atomAnimId = requestAnimationFrame(animateAtom);
-      }
-      animateAtom();
+    }
+    function pushRoute(path){
+      history.pushState({},'', path);
+      route(path);
     }
 
-    // --- About Modal (Wikipedia iframe) ---
-    function showAboutModal(atomic) {
-      let data = elementsData[atomic] || {};
-      let name = data.name || ELEMENTS_INFO[atomic]?.name || '';
-      let wikiTitle = encodeURIComponent(name);
-      let wikiSrc = `https://en.wikipedia.org/api/rest_v1/page/html/${wikiTitle}`;
-      let modal = document.createElement('div');
-      modal.className = "about-modal-bg";
-      modal.innerHTML = `
-        <div class="about-modal-card">
-          <button class="about-modal-close" title="Close">&times;</button>
-          <h2>About ${name} (#${atomic})</h2>
-          <div class="about-wiki-iframe" id="wiki-iframe-wrap">
-            <div class="about-loading">Loading Wikipedia...</div>
+    /**************************************************************************
+     * PERIODIC TABLE RENDERING
+     *
+     * - Initially, each block shows only its atomic number (1..118)
+     * - If owner adds data to DB, that block will show symbol and fullname
+     * - Single click: select block (highlight). If you click the same block again while selected -> navigate to atom screen
+     * - Double click: owner-only edit modal (others nothing)
+     **************************************************************************/
+    function renderPeriodicTable(){
+      // clear current selection
+      selectedAtomic = selectedAtomic && elementsData[selectedAtomic] ? selectedAtomic : null;
+      $ptableGrid.innerHTML = '';
+      // build a map for fast lookup
+      const map = {};
+      for(const [r,c,atomic] of PTABLE_LAYOUT) {
+        map[`${r}-${c}`] = atomic;
+      }
+      // grid 1..9 x 1..18
+      const rows = 9, cols = 18;
+      for(let r=1;r<=rows;r++){
+        for(let c=1;c<=cols;c++){
+          const atomic = map[`${r}-${c}`];
+          const cell = document.createElement('div');
+          if(atomic){
+            cell.className = 'ptable-block';
+            cell.setAttribute('data-atomic', String(atomic));
+            // owner mark
+            if(currentUser && currentUser.email === OWNER_EMAIL) cell.classList.add('owner');
+
+            // background color
+            const color = elementsData[atomic] && elementsData[atomic].color ? elementsData[atomic].color : (DEFAULT_COLORS[atomic]||'transparent');
+            if(color) cell.style.background = color;
+
+            // content: Atomic number always visible top-left; but visible text only if owner filled
+            const numSpan = document.createElement('div');
+            numSpan.className = 'atomic-num';
+            numSpan.textContent = atomic;
+            cell.appendChild(numSpan);
+
+            // If element has symbol+name, show symbol and name fitted
+            const data = elementsData[atomic] || {};
+            if(data.symbol && data.name){
+              const sym = document.createElement('div');
+              sym.className = 'symbol';
+              sym.textContent = data.symbol;
+              cell.appendChild(sym);
+
+              const nameDiv = document.createElement('div');
+              nameDiv.className = 'fullname';
+              nameDiv.textContent = data.name;
+              cell.appendChild(nameDiv);
+            } else {
+              // show only number (already done)
+            }
+
+            // selection logic: click to select, click again to navigate
+            let clickTimer = null;
+            cell.addEventListener('click', (ev)=>{
+              ev.stopPropagation();
+              if(clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+              clickTimer = setTimeout(()=>{
+                // selection logic
+                const prev = selectedAtomic;
+                if(prev && prev === atomic){
+                  // Already selected, so this second click should navigate to atom screen
+                  const slug = elementsData[atomic] && elementsData[atomic].name ? slugify(elementsData[atomic].name) : ('element'+atomic);
+                  pushRoute('/atom/'+slug);
+                } else {
+                  // select this block
+                  clearAllSelections();
+                  selectedAtomic = atomic;
+                  cell.classList.add('selected');
+                }
+              }, 180);
+            });
+
+            // double click: owner edit modal only
+            cell.addEventListener('dblclick', (ev)=>{
+              ev.stopPropagation();
+              if(clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+              if(currentUser && currentUser.email === OWNER_EMAIL){
+                showEditModal(atomic);
+              } else {
+                // non-owner double-click does nothing
+                // small subtle feedback
+                cell.animate([{transform:'scale(1)'},{transform:'scale(0.98)'},{transform:'scale(1)'}],{duration:180});
+              }
+            });
+
+          } else {
+            // empty placeholder to keep grid shape
+            cell.style.background = 'transparent';
+            cell.style.pointerEvents = 'none';
+          }
+          $ptableGrid.appendChild(cell);
+        }
+      }
+    }
+
+    function clearAllSelections(){
+      const nodes = $ptableGrid.querySelectorAll('.ptable-block.selected');
+      nodes.forEach(n=>n.classList.remove('selected'));
+      selectedAtomic = null;
+    }
+
+    // Utility: find atomic number from slug
+    function findAtomicFromSlug(slug){
+      slug = (slug||'').toString().toLowerCase();
+      for(let i=1;i<=118;i++){
+        const name = (elementsData[i] && elementsData[i].name) || '';
+        const sym = (elementsData[i] && elementsData[i].symbol) || '';
+        if(name && slugify(name) === slug) return i;
+        if(sym && sym.toLowerCase() === slug) return i;
+        if(('element'+i) === slug) return i;
+      }
+      return null;
+    }
+
+    /**************************************************************************
+     * EDIT MODAL (OWNER)
+     *
+     * double-click owner block -> modal with symbol, name, proton, electron, neutron, color
+     **************************************************************************/
+    function showEditModal(atomic){
+      const data = elementsData[atomic] || {};
+      $modalRoot.innerHTML = '';
+      const modalBg = document.createElement('div');
+      modalBg.className = 'modal-bg';
+      const card = document.createElement('div');
+      card.className = 'modal-card';
+      card.innerHTML = `
+        <h3>Edit element #${atomic}</h3>
+        <div style="font-size:13px;color:var(--muted);">Enter symbol, name and particle counts. Atomic number is fixed (${atomic}).</div>
+        <div class="modal-row" style="margin-top:10px">
+          <div class="col">
+            <label style="font-size:13px;color:var(--muted)">Symbol</label>
+            <input class="modal-input" id="m-symbol" maxlength="3" placeholder="e.g. H" value="${escapeHtml(data.symbol||'')}">
+          </div>
+          <div class="col">
+            <label style="font-size:13px;color:var(--muted)">Name</label>
+            <input class="modal-input" id="m-name" maxlength="32" placeholder="e.g. Hydrogen" value="${escapeHtml(data.name||'')}">
           </div>
         </div>
+        <div class="modal-row">
+          <div class="col">
+            <label style="font-size:13px;color:var(--muted)">Protons</label>
+            <input class="modal-input" id="m-proton" type="number" min="1" max="500" value="${data.proton||atomic}">
+          </div>
+          <div class="col">
+            <label style="font-size:13px;color:var(--muted)">Electrons</label>
+            <input class="modal-input" id="m-electron" type="number" min="0" max="500" value="${data.electron||atomic}">
+          </div>
+          <div class="col">
+            <label style="font-size:13px;color:var(--muted)">Neutrons</label>
+            <input class="modal-input" id="m-neutron" type="number" min="0" max="600" value="${data.neutron||(atomic)}">
+          </div>
+        </div>
+        <div class="modal-row" style="align-items:center;margin-top:8px">
+          <div class="col" style="flex:0 0 50%">
+            <label style="font-size:13px;color:var(--muted)">Block color</label>
+            <input id="m-color" type="color" class="modal-input" value="${data.color||DEFAULT_COLORS[atomic]||'#111324'}" style="height:40px;padding:4px;">
+          </div>
+          <div style="flex:1"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" id="m-cancel">Cancel</button>
+          <button class="btn" id="m-save">Save</button>
+        </div>
       `;
-      modal.querySelector('.about-modal-close').onclick = () => { $aboutModalRoot.innerHTML = ''; };
-      $aboutModalRoot.innerHTML = ''; $aboutModalRoot.appendChild(modal);
-      fetch(wikiSrc)
-      .then(r=>r.text())
-      .then(html=>{
-        let wrap = modal.querySelector('#wiki-iframe-wrap');
-        wrap.innerHTML = `<iframe srcdoc='${html.replace(/<script[\s\S]*?<\/script>/gi, "")}' style="width:100%;min-height:40vh;border:none;background:#fff;"></iframe>`;
-      })
-      .catch(e=>{
-        modal.querySelector('#wiki-iframe-wrap').innerHTML = '<div class="about-loading">No Wikipedia data found!</div>';
+      modalBg.appendChild(card);
+      $modalRoot.appendChild(modalBg);
+
+      card.querySelector('#m-cancel').addEventListener('click', ()=> $modalRoot.innerHTML = '');
+      card.querySelector('#m-save').addEventListener('click', ()=>{
+        const sym = card.querySelector('#m-symbol').value.trim();
+        const name = card.querySelector('#m-name').value.trim();
+        const proton = parseInt(card.querySelector('#m-proton').value) || atomic;
+        const electron = parseInt(card.querySelector('#m-electron').value) || atomic;
+        const neutron = parseInt(card.querySelector('#m-neutron').value) || 0;
+        const color = card.querySelector('#m-color').value || DEFAULT_COLORS[atomic] || '#111324';
+        if(!sym || !name){ alert('Symbol and Name are required'); return; }
+
+        // Write to realtime database
+        db.ref('elements/'+atomic).set({symbol:sym,name:name,proton, electron, neutron, color})
+          .then(()=> { $modalRoot.innerHTML = ''; })
+          .catch(err=> alert('Save failed: '+err.message));
       });
     }
 
-    // --- UTILS ---
-    function slugify(text) {
-      return (text||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    /**************************************************************************
+     * ATOM SCREEN (3D via three.js)
+     *
+     * - Show electrons around nucleus in shells (2n^2)
+     * - If "Hide orbits and show nucleus" is checked, hide electron orbits and show nucleus interior (protons in red, neutrons in yellow)
+     * - Electron counts come from DB
+     **************************************************************************/
+
+    // Cleanly stop previous render
+    function stopAtomRender(){
+      if(atomRenderState.animId) cancelAnimationFrame(atomRenderState.animId);
+      if(atomRenderState.renderer){
+        try{ atomRenderState.renderer.dispose && atomRenderState.renderer.dispose(); }catch(e){}
+      }
+      atomRenderState = { atomic: null, renderer: null, scene: null, camera: null, animId: null };
+      $atomCanvasWrap.innerHTML = '';
     }
 
-    // --- INIT: Routing on load
-    window.addEventListener('DOMContentLoaded', ()=>{
-      if (currentUser) route(location.pathname, true);
-      else showAuthScreen();
+    function showAtom(atomic){
+      // Show atom view and render using current elementsData
+      stopAtomRender();
+      const data = elementsData[atomic] || {};
+      atomRenderState.atomic = atomic;
+
+      // Prepare canvas and renderer
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(1200, Math.max(480, Math.floor(window.innerWidth*0.7)));
+      canvas.height = Math.min(800, Math.max(360, Math.floor(window.innerHeight*0.5)));
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      $atomCanvasWrap.innerHTML = '';
+      $atomCanvasWrap.appendChild(canvas);
+
+      // three.js setup
+      const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      renderer.setSize(canvas.width, canvas.height, false);
+      renderer.setClearColor(0x07070a, 1);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, canvas.width/canvas.height, 0.1, 1000);
+      camera.position.set(0,0,7);
+
+      // lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+      dir.position.set(6,6,8); scene.add(dir);
+
+      // nucleus group
+      const nucleusGroup = new THREE.Group();
+      scene.add(nucleusGroup);
+
+      // electron group
+      const electronGroup = new THREE.Group();
+      scene.add(electronGroup);
+
+      // helper function to build atom based on data and toggle
+      function buildAtom(detailNucleus){
+        // clear groups
+        while(nucleusGroup.children.length) nucleusGroup.remove(nucleusGroup.children[0]);
+        while(electronGroup.children.length) electronGroup.remove(electronGroup.children[0]);
+
+        const protons = parseInt(data.proton) || atomic;
+        const electrons = parseInt(data.electron) || atomic;
+        const neutrons = parseInt(data.neutron) || Math.max(0, Math.round(protons * 1.0)); // fallback
+
+        if(detailNucleus){
+          // show each proton/neutron as small sphere inside nucleus
+          const total = Math.max(1, protons + neutrons);
+          const count = total;
+          const baseRadius = 0.8 + 0.03*Math.sqrt(total);
+          for(let i=0;i<count;i++){
+            const isP = i < protons;
+            const r = baseRadius * (0.6 + 0.22*Math.random());
+            const theta = Math.acos(1 - 2*(i+0.5)/count);
+            const phi = Math.PI * (1 + Math.sqrt(5)) * i;
+            const x = r*Math.cos(phi)*Math.sin(theta);
+            const y = r*Math.sin(phi)*Math.sin(theta);
+            const z = r*Math.cos(theta);
+            const g = new THREE.SphereGeometry(isP?0.18:0.16, 14, 12);
+            const m = new THREE.MeshPhongMaterial({ color: isP?0xf44336:0xffc107, shininess:32 });
+            const s = new THREE.Mesh(g,m);
+            s.position.set(x,y,z);
+            nucleusGroup.add(s);
+          }
+        } else {
+          // single white nucleus ball
+          const proNeut = protons + neutrons;
+          const radius = 0.9 + 0.06*Math.sqrt(Math.max(1,proNeut));
+          const g = new THREE.SphereGeometry(radius, 42, 28);
+          const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess:80 });
+          const sph = new THREE.Mesh(g, mat);
+          nucleusGroup.add(sph);
+        }
+
+        // electrons: distribute into shells using 2n^2 capacity
+        if(!detailNucleus){
+          const shellCaps = [2,8,18,32,50,72,98]; // typical capacities for shells n=1..7
+          let left = electrons;
+          const shells = [];
+          for(let n=0;n<shellCaps.length && left>0;n++){
+            const cap = shellCaps[n];
+            const count = Math.min(left, cap);
+            shells.push(count);
+            left -= count;
+          }
+          // draw rings & electrons
+          const baseR = 1.4 + 0.12*Math.sqrt(protons+neutrons);
+          const electronMeshes = [];
+          for(let s=0;s<shells.length;s++){
+            const count = shells[s];
+            const shellR = baseR + s*0.68; // radius per shell
+            // orbit ring
+            const ringGeom = new THREE.TorusGeometry(shellR, 0.018, 10, 120);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x41c1ff, transparent:true, opacity:0.28 });
+            const ring = new THREE.Mesh(ringGeom, ringMat);
+            ring.rotation.x = Math.PI/2 * (0.9 + 0.1*Math.random()); // slight tilt
+            electronGroup.add(ring);
+            for(let e=0;e<count;e++){
+              // initial placement
+              const theta = (2*Math.PI/count) * e;
+              const phi = Math.PI/4 + (s%2)*Math.PI/8 + (e*0.03);
+              const ex = shellR*Math.cos(theta)*Math.sin(phi);
+              const ey = shellR*Math.sin(theta)*Math.sin(phi);
+              const ez = shellR*Math.cos(phi);
+              const em = new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10), new THREE.MeshPhongMaterial({ color:0x41c1ff, shininess:60 }));
+              em.position.set(ex,ey,ez);
+              // store params for animation
+              em.userData = {shell:s, index:e, count, shellR, baseTheta: theta, basePhi: phi, speed: 0.9 + 0.12*s};
+              electronGroup.add(em);
+              electronMeshes.push(em);
+            }
+          }
+          // attach electronMeshes to state
+          atomRenderState.electronMeshes = electronMeshes;
+        }
+      } // end buildAtom
+
+      // Initial build
+      buildAtom($nucleusToggle.checked);
+
+      // store renderer state
+      atomRenderState.renderer = renderer;
+      atomRenderState.scene = scene;
+      atomRenderState.camera = camera;
+
+      // mouse interaction: simple drag to rotate the whole scene
+      let isDragging = false, lastX=0, lastY=0, rotX=0, rotY=0;
+      canvas.addEventListener('pointerdown',(e)=>{ isDragging=true; lastX=e.clientX; lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener('pointerup',(e)=>{ isDragging=false; try{canvas.releasePointerCapture(e.pointerId);}catch(_){}; });
+      canvas.addEventListener('pointermove',(e)=>{ if(!isDragging) return; const dx = e.clientX - lastX; const dy = e.clientY - lastY; rotY += dx*0.012; rotX += dy*0.012; rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX)); lastX=e.clientX; lastY=e.clientY; });
+
+      function animate(){
+        // rotate scene
+        scene.rotation.y = rotY;
+        scene.rotation.x = rotX;
+
+        // animate electrons
+        if(atomRenderState.electronMeshes){
+          const t = performance.now()/1200;
+          atomRenderState.electronMeshes.forEach(em=>{
+            const ud = em.userData;
+            const theta = ud.baseTheta + t * ud.speed;
+            const phi = ud.basePhi + Math.sin(t*0.3 + ud.shell)*0.16;
+            em.position.set(ud.shellR*Math.cos(theta)*Math.sin(phi), ud.shellR*Math.sin(theta)*Math.sin(phi), ud.shellR*Math.cos(phi));
+          });
+        }
+
+        renderer.render(scene, camera);
+        atomRenderState.animId = requestAnimationFrame(animate);
+      }
+      animate();
+
+      // toggle handler
+      $nucleusToggle.onchange = ()=> {
+        buildAtom($nucleusToggle.checked);
+        $atomLegend.style.display = $nucleusToggle.checked ? "" : "none";
+      };
+
+      // About button (wiki)
+      $aboutBtn.onclick = ()=> showAboutModal(atomic);
+
+      // save state pointers for cleanup
+      atomRenderState.renderer = renderer;
+      atomRenderState.scene = scene;
+      atomRenderState.camera = camera;
+    }
+
+    /**************************************************************************
+     * ABOUT MODAL (Wikipedia)
+     **************************************************************************/
+    function showAboutModal(atomic){
+      const data = elementsData[atomic] || {};
+      const name = data.name || '';
+      $aboutRoot.innerHTML = '';
+      const bg = document.createElement('div'); bg.className = 'about-modal-bg';
+      const card = document.createElement('div'); card.className = 'about-card';
+      card.innerHTML = `<h4>About ${escapeHtml(name || ('Element '+atomic))}</h4>
+        <div style="color:var(--muted);padding:6px 8px 10px 8px">Loading Wikipedia...</div>
+        <div id="wiki-wrap" style="height:58vh"></div>
+        <div style="display:flex;justify-content:flex-end;padding-top:8px"><button class="btn ghost" id="about-close">Close</button></div>`;
+      bg.appendChild(card);
+      $aboutRoot.appendChild(bg);
+      card.querySelector('#about-close').addEventListener('click', ()=> $aboutRoot.innerHTML = '');
+
+      if(!name) {
+        const wrap = document.getElementById('wiki-wrap');
+        wrap.innerHTML = `<div style="color:var(--muted);padding:12px">No name set for this element yet.</div>`;
+        return;
+      }
+
+      const wikiTitle = encodeURIComponent(name);
+      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/html/${wikiTitle}`;
+      fetch(wikiUrl).then(res=>{
+        if(!res.ok) throw new Error('No wiki');
+        return res.text();
+      }).then(html=>{
+        // strip scripts for safety
+        const cleaned = html.replace(/<script[\s\S]*?<\/script>/gi,'');
+        const wrap = document.getElementById('wiki-wrap');
+        const iframe = document.createElement('iframe');
+        iframe.className = 'wiki-frame';
+        iframe.srcdoc = cleaned;
+        wrap.innerHTML = '';
+        wrap.appendChild(iframe);
+      }).catch(err=>{
+        const wrap = document.getElementById('wiki-wrap');
+        wrap.innerHTML = `<div style="color:var(--muted);padding:12px">Wikipedia content not available.</div>`;
+      });
+    }
+
+    /**************************************************************************
+     * UTILITIES
+     **************************************************************************/
+    function slugify(s){
+      return (s||'').toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    }
+    function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    /**************************************************************************
+     * EDITOR NOTES:
+     *
+     * - Clicking element:
+     *    * first click selects
+     *    * clicking the same selected element navigates to /atom/{slug} (if name exists slug = slugify(name); else /atom/element{n})
+     * - Double-click (owner only) opens edit modal
+     * - The DB path used: /elements/{atomicNumber}
+     * - Data structure stored:
+     *    { symbol: "H", name: "Hydrogen", proton: 1, electron: 1, neutron: 0, color: "#abcdef" }
+     *
+     **************************************************************************/
+
+    /**************************************************************************
+     * DB-friendly slug helper description
+     **************************************************************************/
+    function findAtomicFromSlug(slugIn){
+      // duplicate of earlier but kept to ensure lookups in other scopes can use it
+      slugIn = (slugIn||'').toString().toLowerCase();
+      for(let i=1;i<=118;i++){
+        const e = elementsData[i] || {};
+        const name = (e.name || '').toLowerCase();
+        const sym = (e.symbol || '').toLowerCase();
+        if(name && slugify(name) === slugIn) return i;
+        if(sym && sym === slugIn) return i;
+        if(('element'+i) === slugIn) return i;
+      }
+      return null;
+    }
+
+    /**************************************************************************
+     * DATABASE RULES NOTE (example)
+     *
+     * Use these Realtime Database Rules (set in Firebase console):
+     *
+     * {
+     *   "rules": {
+     *     ".read": "auth != null",
+     *     "elements": {
+     *       ".read": "auth != null",
+     *       ".write": "auth.token.email === 'owner@gmail.com'"
+     *     }
+     *   }
+     * }
+     *
+     * This allows any authenticated user to read, only owner@gmail.com to write.
+     **************************************************************************/
+
+    /**************************************************************************
+     * STARTUP: initial render
+     **************************************************************************/
+    document.addEventListener('click', (ev)=>{
+      // clicking outside any block clears selection
+      if(!ev.target.closest('.ptable-block')) {
+        clearAllSelections();
+      }
     });
+
+    // initial show/hide
+    if(currentUser){
+      route(location.pathname);
+    } else {
+      $authScreen.style.display = '';
+      $ptableWrap.style.display = 'none';
+      $atomView.style.display = 'none';
+      $signoutBtn.style.display = 'none';
+    }
+
+    // On page load: set route to / if unknown
+    window.addEventListener('load', ()=> {
+      if(!location.pathname || location.pathname === '/') {
+        history.replaceState({},'', '/');
+      } else {
+        // keep existing route
+      }
+    });
+
+    /**************************************************************************
+     * Small safety functions
+     **************************************************************************/
+    function consoleDump(){
+      console.log('Current user:', currentUser);
+      console.log('Elements sample:', Object.keys(elementsData).slice(0,10).map(k=>[k,elementsData[k]]));
+    }
+
+    /**************************************************************************
+     * END OF MAIN SCRIPT
+     *
+     * The file purposely keeps logic clear, owner-edit modal, selection-first-click
+     * second-click navigation, 3D atomic rendering with toggle to show nucleus details,
+     * and Wikipedia about modal.
+     *
+     **************************************************************************/
   </script>
 </body>
-                                 </html>
+  </html>
