@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sliding Puzzle — Solver (Final with Tile-position input)</title>
+  <title>Sliding Puzzle — Solver (Final)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Firebase compat libs -->
@@ -23,19 +23,25 @@
       font-size:2.5rem; font-weight:800; color:#e1e4e8;
       background:linear-gradient(145deg,#3a3f4b,#2c303a);
       box-shadow:0 6px 12px rgba(0,0,0,0.8), inset 0 3px 6px rgba(255,255,255,0.05);
-      transition: transform 0.3s ease;
+      transition: transform 0.28s ease;
       text-shadow:0 0 4px #0008; backface-visibility:hidden;
     }
     .tile.hard { font-size:1.5rem; }
-    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.1) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
+    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.06) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
     .tile.empty { background:transparent; box-shadow:none; cursor:default; pointer-events:none; }
     #grid { position:relative; width:100%; height:100%; --grid-size:3; }
+
+    /* wrap main app so we can blur/dim it without affecting overlays */
+    #appWrap { width:100%; max-width:900px; display:flex; flex-direction:column; align-items:center; }
+    #appWrap.dim { filter: blur(6px) brightness(0.45); pointer-events:none; transition: filter .18s ease; }
+
     #modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; z-index:100; }
     #modal { background:#21262d; padding:2rem; border-radius:1rem; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.7); }
     #modal h2 { font-size:2rem; margin-bottom:1rem; color:#58a6ff; }
     #modal button { margin-top:1rem; padding:0.75rem 1.5rem; background:#238636; color:white; border:none; border-radius:0.5rem; font-size:1rem; cursor:pointer; transition:background 0.2s; }
     #modal button:hover { background:#2ea043; }
-    #controls { width:100%; max-width:40rem; margin-top:36px; display:none; justify-content:center; gap:12px; align-items:center; }
+
+    #controls { width:100%; max-width:40rem; margin-top:24px; display:none; justify-content:center; gap:12px; align-items:center; }
 
     .controls-column { width:100%; display:flex; flex-direction:column; gap:10px; align-items:center; }
     .btn-wide { width:100%; max-width:360px; padding:0.72rem 1.2rem; border-radius:0.75rem; font-size:1.05rem; font-weight:700; cursor:pointer; color:white; border:none; box-shadow:0 8px 20px rgba(0,0,0,0.6); }
@@ -46,13 +52,10 @@
     #solveBtn:disabled{ background:#285c38; cursor:not-allowed; opacity:.85; transform:translateY(0); }
 
     #customWrapper { width:100%; max-width:360px; display:none; margin-top:6px; background:#0f1720; padding:12px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.5); }
-    .field-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .field-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; width:100%; }
     label { color:#9fb3c8; width:72px; font-weight:700; }
     select, input[type="number"] { flex:1; padding:0.5rem 0.6rem; border-radius:8px; background:#071018; color:#dbeafe; border:1px solid #21343b; }
     .small-btn { padding:0.45rem 0.7rem; border-radius:8px; border:none; cursor:pointer; font-weight:700; }
-    #applyBtn { background:#7c3aed; color:white; }
-    #computeBtn { background:#0ea5a4; color:white; }
-    #computeInfoBtn { margin-top:8px; background:transparent; color:#9fb3c8; border:none; cursor:pointer; text-decoration:underline; }
 
     #thinking-container { max-width: 360px; margin: 20px auto 40px auto; padding: 18px 22px; background-color: #202124; border-radius: 14px; box-shadow:0 0 0 1px rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.4); color: #e8eaed; }
     #thinking-text { font-size: 1.3rem; font-weight: 600; background: linear-gradient(90deg,#e8eaed 20%,#121212 40%,#e8eaed 60%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shine-slide 2.5s linear infinite; }
@@ -63,17 +66,16 @@
     #progressBar { height:100%; background:linear-gradient(90deg,#238636,#58a6ff); width:0%; transition:width 0.5s; }
     #progressText { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:.98rem; color:#fff; font-weight:700; text-shadow:0 2px 8px #0009; pointer-events:none; }
 
-    #computeInfoOverlay { display:none; position:fixed; inset:0; z-index:140; display:flex; align-items:flex-end; justify-content:center; pointer-events:none; }
-    #computeInfoPanel { width:100%; max-width:720px; margin:0 auto; pointer-events:auto; }
-    #computeInfoInner { background:#0f1720; color:#cfe6ff; padding:18px; border-top-left-radius:12px; border-top-right-radius:12px; box-shadow:0 -8px 40px rgba(0,0,0,0.7); }
-
-    #computeCardOverlay { display:none; position:fixed; inset:0; align-items:center; justify-content:center; z-index:150; }
-    #computeCard { width:min(680px,95%); background:rgba(16,20,24,0.94); border-radius:12px; padding:18px; color:#e6eef6; box-shadow:0 10px 40px rgba(0,0,0,0.7); backdrop-filter: blur(6px); }
+    /* compute-card overlay sits above appWrap so card not blurred */
+    #computeCardOverlay { display:none; position:fixed; inset:0; align-items:center; justify-content:center; z-index:120; }
+    #computeBackdrop { position:absolute; inset:0; background:rgba(0,0,0,0.55); backdrop-filter: blur(2px); }
+    #computeCard { position:relative; z-index:130; width:min(720px,94%); background:rgba(16,20,24,0.98); border-radius:12px; padding:18px; color:#e6eef6; box-shadow:0 10px 40px rgba(0,0,0,0.7); }
     #computeCard h3 { font-size:1.25rem; margin-bottom:6px; color:#58a6ff; }
     #computeCard .moves { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
     .pill { background:#17202a; padding:6px 8px; border-radius:8px; font-weight:700; }
     #computeCard .bottom { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
     #saveStatus { margin-right:auto; align-self:center; color:#9fb3c8; }
+    #estimateText { color:#9fb3c8; margin-top:6px; }
 
     .dim-background { filter: blur(4px) brightness(0.6); pointer-events: none; }
 
@@ -82,71 +84,73 @@
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-6">
 
-  <!-- Home -->
-  <div id="homeScreen" class="w-full max-w-md p-8 rounded-3xl text-center mb-10 select-none">
-    <h1 class="text-white text-5xl font-extrabold mb-8 drop-shadow-lg">Sliding Puzzle Game</h1>
-    <div class="relative inline-block w-full bg-gray-800 rounded-full overflow-hidden shadow-inner">
-      <div id="toggleSlider" class="absolute top-0 left-0 rounded-full h-full w-1/3 transition-all duration-300 ease-in-out"></div>
-      <div class="flex text-gray-300 font-semibold text-xl cursor-pointer">
-        <div data-mode="easy" class="flex-1 py-4 z-10">Easy</div>
-        <div data-mode="normal" class="flex-1 py-4 z-10">Normal</div>
-        <div data-mode="hard" class="flex-1 py-4 z-10">Hard</div>
+  <!-- wrap main UI so overlays aren't blurred -->
+  <div id="appWrap">
+    <!-- Home -->
+    <div id="homeScreen" class="w-full max-w-md p-8 rounded-3xl text-center mb-10 select-none">
+      <h1 class="text-white text-5xl font-extrabold mb-8 drop-shadow-lg">Sliding Puzzle Game</h1>
+      <div class="relative inline-block w-full bg-gray-800 rounded-full overflow-hidden shadow-inner">
+        <div id="toggleSlider" class="absolute top-0 left-0 rounded-full h-full w-1/3 transition-all duration-300 ease-in-out"></div>
+        <div class="flex text-gray-300 font-semibold text-xl cursor-pointer">
+          <div data-mode="easy" class="flex-1 py-4 z-10">Easy</div>
+          <div data-mode="normal" class="flex-1 py-4 z-10">Normal</div>
+          <div data-mode="hard" class="flex-1 py-4 z-10">Hard</div>
+        </div>
+      </div>
+      <button id="startBtn" class="mt-10 w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-2xl font-semibold shadow-lg transition duration-300">
+        Start Game
+      </button>
+      <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপতে পারো)।</p>
+    </div>
+
+    <!-- Game container -->
+    <div id="gameContainer" class="hidden w-full max-w-lg aspect-square rounded-3xl p-6 flex flex-col relative">
+      <div id="grid"></div>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="progressBarWrap" style="display:none;">
+      <div id="progressBar"></div>
+      <div id="progressText"></div>
+    </div>
+
+    <!-- Controls below board -->
+    <div id="controls">
+      <div class="controls-column">
+        <div id="thinkingSmall" aria-hidden="true"></div>
+        <div id="winner-message"></div>
+        <div id="game-board"></div>
+        <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
+          <div id="thinking-text">Solving With Stages...</div>
+          <div id="thinking-subtext"></div>
+        </div>
+
+        <button id="solveBtn" class="btn-wide" title="Bot Solve">Solve</button>
+        <button id="setCustomBtn" class="btn-wide">Set Custom Position</button>
+
+        <div id="customWrapper">
+          <div class="field-row"><label>Tile</label>
+            <select id="tileSelect"></select>
+          </div>
+          <div class="field-row"><label>Row</label>
+            <select id="rowSelect"></select>
+          </div>
+          <div class="field-row"><label>Column</label>
+            <select id="colSelect"></select>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button id="applyBtn" class="small-btn" style="flex:1;background:#7c3aed;color:white;">Apply</button>
+            <button id="computeBtn" class="small-btn" style="flex:1;background:#0ea5a4;color:white;">Compute</button>
+          </div>
+          <button id="computeInfoBtn" style="background:transparent;border:none;color:#9fb3c8;margin-top:8px;text-decoration:underline;">Compute ও Efficiency সম্পর্কে বিস্তারিত দেখুন</button>
+        </div>
+
       </div>
     </div>
-    <button id="startBtn" class="mt-10 w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-2xl font-semibold shadow-lg transition duration-300">
-      Start Game
-    </button>
-    <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপতে পারো)।</p>
-  </div>
-
-  <!-- Game container -->
-  <div id="gameContainer" class="hidden w-full max-w-lg aspect-square rounded-3xl p-6 flex flex-col relative">
-    <div id="grid"></div>
-  </div>
-
-  <!-- Progress bar -->
-  <div id="progressBarWrap" style="display:none;">
-    <div id="progressBar"></div>
-    <div id="progressText"></div>
-  </div>
-
-  <!-- Controls -->
-  <div id="controls">
-    <div class="controls-column">
-      <div id="thinkingSmall" aria-hidden="true"></div>
-      <div id="winner-message"></div>
-      <div id="game-board"></div>
-      <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
-        <div id="thinking-text">Solving With Stages...</div>
-        <div id="thinking-subtext"></div>
-      </div>
-
-      <button id="solveBtn" class="btn-wide" title="Bot Solve">Solve</button>
-      <button id="setCustomBtn" class="btn-wide">Set Custom Position</button>
-
-      <!-- NEW: tile-position style input (row/col fixed labels + tile number) -->
-      <div id="customWrapper">
-        <div class="field-row"><label>Tile</label>
-          <select id="tileSelect"></select>
-        </div>
-        <div class="field-row"><label>Row</label>
-          <select id="rowSelect"></select>
-        </div>
-        <div class="field-row"><label>Column</label>
-          <select id="colSelect"></select>
-        </div>
-        <div style="display:flex; gap:8px; margin-top:6px;">
-          <button id="applyBtn" class="small-btn" style="flex:1;background:#7c3aed;color:white;">Apply</button>
-          <button id="computeBtn" class="small-btn" style="flex:1;background:#0ea5a4;color:white;">Compute</button>
-        </div>
-        <button id="computeInfoBtn" style="background:transparent;border:none;color:#9fb3c8;margin-top:8px;text-decoration:underline;">Compute ও Efficiency সম্পর্কে বিস্তারিত দেখুন</button>
-      </div>
-
-    </div>
-  </div>
+  </div> <!-- end appWrap -->
 
   <!-- Modal -->
-  <div id="modalOverlay">
+  <div id="modalOverlay" class="flex">
     <div id="modal">
       <h2>🎉 You Solved It!</h2>
       <p class="text-gray-300">Congratulations on completing the puzzle.</p>
@@ -159,11 +163,11 @@
     <div id="computeInfoPanel">
       <div id="computeInfoInner">
         <h3 style="color:#58a6ff; font-size:1.2rem; margin-bottom:6px;">Compute & Efficiency</h3>
-        <p style="color:#b9d0e6; line-height:1.45;">Compute বাটনে আপনি যে custom position (একটি টাইলের row/col) সেট করবেন, সেটাকে targeted BFS/limited-search দিয়ে নির্দিষ্ট টাইলকে তার goal position-এ বসানোর চেষ্টা করা হবে — পুরো 5×5 IDA না করে টাইল-লেভেলে compute চালানো হবে।</p>
+        <p style="color:#b9d0e6; line-height:1.45;">Compute টিক করে দিলে worker limited BFS/IDA ব্যবহার করে targeted টাইলকে goal-এ বসাবার চেষ্টা করে — সম্পূর্ণ 5×5 IDA না চালিয়ে প্রতিটি টাইল আলাদাভাবে compute করার উদ্দেশ্য।</p>
         <ul style="color:#9fb3c8; margin-top:8px;">
           <li>• compute-এ node/time limits আছে — বড় search-এ ব্রাউজার freeze না করাই প্রধান উদ্দেশ্য।</li>
-          <li>• Firebase-এ cached result থাকলে সেটাকে আগে দেখানো হবে — নতুন compute করার দরকার হবে না।</li>
-          <li>• আপনি টাইলগুলো আলাদাভাবে serially compute ও save করলে পরে ওই টাইল যেই অবস্থাতেই থাকুক না কেন cached moves কাজে লাগবে।</li>
+          <li>• Firebase-এ cached result থাকলে আগে তা দেখানো হবে — নতুন compute করার দরকার হবে না।</li>
+          <li>• tile=1 যখন bottom-right (row=size, col=size) এ আছে, compute করে movedTiles (কোন কোন টাইল সরানো লাগল) ডাটা আলাদাভাবে save হবে — পরে reuse করা যাবে।</li>
         </ul>
         <div style="display:flex; justify-content:space-between; margin-top:12px;">
           <button id="closeInfoBtn" style="background:#16a34a; color:white; padding:8px 12px; border-radius:8px; border:none;">Close</button>
@@ -173,15 +177,18 @@
     </div>
   </div>
 
-  <!-- Compute result card overlay -->
+  <!-- Compute result card overlay (with backdrop) -->
   <div id="computeCardOverlay">
+    <div id="computeBackdrop"></div>
     <div id="computeCard">
       <div style="display:flex; gap:12px; align-items:start;">
         <div style="flex:1;">
           <h3 id="cardTitle">Compute Result</h3>
           <div id="cardMeta" style="color:#9fb3c8; font-size:0.95rem;">Tile: <strong id="metaTile">-</strong> • Pos: <strong id="metaPos">-</strong></div>
+          <div id="estimateText">Estimating...</div>
           <div style="margin-top:8px;">Moves:</div>
           <div id="movesList" class="moves"></div>
+          <div style="margin-top:8px;" id="movedTilesWrap"></div>
           <div class="bottom">
             <div id="saveStatus">Not saved yet</div>
             <button id="cardClose" style="background:#444; color:white; padding:8px 12px; border-radius:8px; border:none;">Close</button>
@@ -193,7 +200,7 @@
   </div>
 
 <script>
-/* ------------------ firebase configs (your 3 configs) ------------------ */
+/* -------------------- firebase configs (your three configs) -------------------- */
 const config1 = {
   apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
   authDomain: "chatstudio-agent.firebaseapp.com",
@@ -222,13 +229,10 @@ const config3 = {
   messagingSenderId: "422133823015",
   appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
 };
-/* --------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------------ */
 
-/* ---------------- the rest of app (solver + UI + firebase) ---------------- */
-// Many parts retained from your earlier final code, only custom UI + handlers changed.
-
-const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
-let currentMode = 'easy';
+/* -------------------- core UI & solver variables -------------------- */
+const appWrap = document.getElementById('appWrap');
 const homeScreen = document.getElementById('homeScreen');
 const gameContainer = document.getElementById('gameContainer');
 const gridEl = document.getElementById('grid');
@@ -257,14 +261,18 @@ const movesList = document.getElementById('movesList');
 const cardClose = document.getElementById('cardClose');
 const cardSave = document.getElementById('cardSave');
 const saveStatus = document.getElementById('saveStatus');
+const estimateText = document.getElementById('estimateText');
+const movedTilesWrap = document.getElementById('movedTilesWrap');
 
 const progressBarWrap = document.getElementById('progressBarWrap');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
 
+const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
+let currentMode = 'easy';
 let size, tiles = [], emptyIndex;
 
-/* --- Mode UI logic --- */
+/* -------------------- mode & grid UI -------------------- */
 document.querySelectorAll('[data-mode]').forEach(el=>{
   el.addEventListener('click', ()=> {
     currentMode = el.dataset.mode;
@@ -312,7 +320,7 @@ function createGrid(gridSize){
   });
   controls.style.display = 'flex';
   progressBarWrap.style.display = 'block';
-  populateCustomSelectors(); // update selectors for new size
+  populateCustomSelectors();
   updateProgressBar();
 }
 
@@ -383,6 +391,7 @@ window.addEventListener('resize', ()=>{
   });
 });
 
+// progress
 function calcProgress(arr, sz){
   if(sz===3) {
     let cnt=0;
@@ -403,7 +412,6 @@ function calcProgress(arr, sz){
   }
   return 0;
 }
-
 function updateProgressBar(){
   if(!tiles||!size) return;
   const perc = calcProgress(tiles,size);
@@ -412,7 +420,7 @@ function updateProgressBar(){
   if(perc===100) progressText.textContent = "🎉 Puzzle Solved!";
 }
 
-/* ---------------- Worker solver (kept intact) ---------------- */
+/* -------------------- worker solver (kept intact) -------------------- */
 function solverWorkerFunction(){
   self.onmessage = function(ev){
     try{
@@ -592,7 +600,7 @@ function solverWorkerFunction(){
         return;
       }
 
-      // full solver preserved for solve
+      // full solver for 'solve' kept as before...
       if(size === 4){
         const working = startState.slice();
         let allMoves = [];
@@ -706,8 +714,11 @@ function solverWorkerFunction(){
   };
 }
 
+/* create worker blob/url */
 const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
 const workerUrl = URL.createObjectURL(workerBlob);
+
+/* solver run (unchanged) */
 let solverWorker = null;
 let solverRunning = false;
 let queuedMoves = [];
@@ -772,34 +783,26 @@ function applyMovesSequence(moves){
   }
   setTimeout(step, 200);
 }
-
 solveBtn.addEventListener('click', startSolver);
 window.addEventListener('keydown', (e)=>{
   if((e.key === 'b' || e.key === 'B') && !gameContainer.classList.contains('hidden')) startSolver();
   if(e.key === 'Escape' && solverRunning) stopSolverNow();
 });
-
 window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
 
-// typing effect (safe)
+/* typing effect (safe) */
 (function(){
   const subTextEl = document.getElementById('thinking-subtext');
   const messages = [
-    'Analyzing with Python simulation...',
-    'Evaluating heuristics...',
-    'Running Minimax algorithm...',
-    'Performing Monte-Carlo simulations...',
-    'Checking board states...',
-    'Detecting chains and loops...',
-    'Applying corner and edge heuristics...',
-    'Preparing final move...',
-    'Almost done...',
+    'Analyzing heuristics...',
+    'Evaluating board...',
+    'Preparing move...',
     'বট কাজ করছে...'
   ];
   let idx = 0;
   function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
   async function typeEffect(text, element, delay=30) {
-    if(!element){ await wait(900); return; }
+    if(!element){ await wait(700); return; }
     element.textContent = '';
     for(let i=0;i<text.length;i++){ element.textContent += text.charAt(i); await wait(delay); }
     await wait(800);
@@ -812,7 +815,6 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
 
 /* ---------------- Firebase init & helpers ---------------- */
 function stateKey(arr){ return arr.map(v=>v===null?'_':v).join(','); }
-
 const firebaseApps = { a: null, b: null, c: null };
 function initFirebaseApps(){
   try{
@@ -829,24 +831,17 @@ function getDbForTile(tile){
   return null;
 }
 
-/* ------------ Custom-position UI helpers & handlers ------------ */
-
-// populate tile,row,col selectors based on current size
+/* ---------------- Custom selectors & helpers ---------------- */
 function populateCustomSelectors(){
-  // tile options 1..(size*size-1)
+  if(!size) return;
   tileSelect.innerHTML = '';
-  for(let t=1; t<=size*size-1; t++){
-    const opt = document.createElement('option'); opt.value = t; opt.textContent = t; tileSelect.appendChild(opt);
-  }
-  // row options 1..size
+  for(let t=1; t<=size*size-1; t++){ const opt=document.createElement('option'); opt.value=t; opt.textContent=t; tileSelect.appendChild(opt); }
   rowSelect.innerHTML = '';
   for(let r=1; r<=size; r++){ const o=document.createElement('option'); o.value=r; o.textContent=r; rowSelect.appendChild(o); }
-  // col options 1..size
   colSelect.innerHTML = '';
   for(let c=1; c<=size; c++){ const o=document.createElement('option'); o.value=c; o.textContent=c; colSelect.appendChild(o); }
 }
 
-// update DOM grid from tiles array (keeps same elements recreated)
 function refreshGridFromTiles(){
   gridEl.innerHTML = '';
   tiles.forEach((num,i)=>{
@@ -865,17 +860,16 @@ function refreshGridFromTiles(){
   updateProgressBar();
 }
 
-// Apply: swap selected tile into chosen (row,col)
+/* Apply button: swap tile into target row/col */
 applyBtn.addEventListener('click', ()=>{
   const tnum = Number(tileSelect.value);
   const r = Number(rowSelect.value);
   const c = Number(colSelect.value);
-  if(!tnum || !r || !c){ alert('অনুগ্রহ করে Tile, Row ও Column ঠিকভাবে বেছে নিন।'); return; }
+  if(!tnum || !r || !c){ alert('Tile, Row ও Column ঠিকভাবে বেছে নিন।'); return; }
   const targetIdx = (r-1)*size + (c-1);
   const fromIdx = tiles.indexOf(tnum);
-  if(fromIdx === -1){ alert('বিচার্য: টাইলটি বোর্ডে নেই।'); return; }
+  if(fromIdx === -1){ alert('টাইলটি বোর্ডে নেই।'); return; }
   if(fromIdx === targetIdx){ alert('টাইলটি ইতিমধ্যেই ঐ স্থানে আছে।'); return; }
-  // swap: put whatever at target to fromIdx, and tnum to targetIdx
   const temp = tiles[targetIdx];
   tiles[targetIdx] = tnum;
   tiles[fromIdx] = temp;
@@ -883,51 +877,9 @@ applyBtn.addEventListener('click', ()=>{
   refreshGridFromTiles();
 });
 
-// Compute: run worker compute for selected tile in its current board state
-computeBtn.addEventListener('click', ()=>{
-  const tnum = Number(tileSelect.value);
-  if(!tnum){ alert('অনুগ্রহ করে একটি Tile বেছে নিন।'); return; }
-  // ensure grid updated state used
-  const snapshot = tiles.slice();
-  // show empty compute card first
-  showComputeCard(tnum, snapshot.indexOf(tnum), []);
-  initFirebaseApps();
-  const w = new Worker(workerUrl);
-  w.onmessage = function(ev){
-    const d = ev.data;
-    if(d.type === 'compute_result'){
-      const moves = d.moves;
-      showComputeCard(d.target, snapshot.indexOf(d.target), moves);
-      const db = getDbForTile(d.target);
-      if(!db){
-        saveStatus.textContent = 'Firebase not configured for this tile range (provide config).';
-        w.terminate();
-        return;
-      }
-      const key = stateKey(snapshot);
-      const path = `tiles/${d.target}/${encodeURIComponent(key)}`;
-      const ref = db.ref(path);
-      ref.get().then(snap=>{
-        if(snap.exists()){
-          saveStatus.textContent = 'Already saved (cached).';
-        } else {
-          ref.set({ moves: moves || [], length: moves?moves.length:0, timestamp: Date.now() }).then(()=>{
-            saveStatus.textContent = 'Saved ✅';
-          }).catch(e=>{
-            saveStatus.textContent = 'Save failed: '+e.message;
-          });
-        }
-      }).catch(err=>{
-        saveStatus.textContent = 'DB check failed: '+err.message;
-      });
-      w.terminate();
-    }
-  };
-  w.postMessage({type:'compute_tile', state: snapshot, size, targetTile: tnum});
-});
+/* ---------- Compute behavior: show card, estimate time, start worker, save special movedTiles ---------- */
 
-/* compute card UI */
-function showComputeCard(tile, posIdx, movesArray){
+function showComputeCardOverlay(tile, posIdx, movesArray, estimateSec){
   metaTile.textContent = tile;
   metaPos.textContent = posIdx;
   movesList.innerHTML = '';
@@ -936,17 +888,113 @@ function showComputeCard(tile, posIdx, movesArray){
       const el = document.createElement('div'); el.className='pill'; el.textContent = m; movesList.appendChild(el);
     }
   } else {
-    const el = document.createElement('div'); el.style.color='#9fb3c8'; el.textContent = 'No moves found / timed out'; movesList.appendChild(el);
+    const el = document.createElement('div'); el.style.color='#9fb3c8'; el.textContent = 'Computing...'; movesList.appendChild(el);
   }
+  movedTilesWrap.innerHTML = '';
   saveStatus.textContent = 'Not saved yet';
+  if(typeof estimateSec === 'number'){
+    estimateText.textContent = `Estimated compute time: ~${estimateSec} s (heuristic)`;
+  } else {
+    estimateText.textContent = 'Estimated compute time: -';
+  }
   computeCardOverlay.style.display = 'flex';
-  document.body.classList.add('dim-background');
+  // blur/dim the appWrap (not the overlay)
+  appWrap.classList.add('dim');
 }
-function hideComputeCard(){ computeCardOverlay.style.display = 'none'; document.body.classList.remove('dim-background'); }
-cardClose.addEventListener('click', hideComputeCard);
-computeCardOverlay.addEventListener('click', (e)=>{ if(e.target === computeCardOverlay) hideComputeCard(); });
+function hideComputeCardOverlay(){
+  computeCardOverlay.style.display = 'none';
+  appWrap.classList.remove('dim');
+}
+cardClose.addEventListener('click', hideComputeCardOverlay);
+computeCardOverlay.addEventListener('click', (e)=>{ if(e.target.id === 'computeBackdrop') hideComputeCardOverlay(); });
 
-/* card save manual */
+/* estimate compute time heuristic (manhattan distance * factor) */
+function estimateComputeSeconds(snapshot, tile){
+  const idx = snapshot.indexOf(tile);
+  if(idx === -1) return 2;
+  const r = Math.floor(idx/size), c = idx%size;
+  const goalR = Math.floor((tile-1)/size), goalC = (tile-1)%size;
+  const man = Math.abs(r-goalR)+Math.abs(c-goalC);
+  // heuristic: 0.25s per manhattan + 0.6s base, cap 60s
+  const ms = Math.min(60000, Math.round(man * 300 + 600));
+  return Math.max(1, Math.ceil(ms/1000));
+}
+
+/* Compute button handler: show overlay, estimate, spawn worker, save result + special movedTiles for tile1 bottom-right */
+computeBtn.addEventListener('click', async ()=>{
+  const tnum = Number(tileSelect.value);
+  if(!tnum){ alert('একটি Tile বেছে নিন।'); return; }
+  const snapshot = tiles.slice();
+  const originalIdx = snapshot.indexOf(tnum);
+
+  // show initial card with estimate
+  const est = estimateComputeSeconds(snapshot, tnum);
+  showComputeCardOverlay(tnum, originalIdx, null, est);
+
+  initFirebaseApps();
+  const w = new Worker(workerUrl);
+  w.onmessage = function(ev){
+    const d = ev.data;
+    if(d.type === 'compute_result'){
+      const moves = d.moves || [];
+      // update card moves
+      movesList.innerHTML = '';
+      if(moves.length){
+        for(const m of moves){
+          const el = document.createElement('div'); el.className='pill'; el.textContent = m; movesList.appendChild(el);
+        }
+      } else {
+        const el = document.createElement('div'); el.style.color='#9fb3c8'; el.textContent = 'No moves found / timed out'; movesList.appendChild(el);
+      }
+      // compute movedTiles set
+      const movedSet = new Set((moves||[]).map(x=>x));
+      const movedArr = Array.from(movedSet);
+      movedTilesWrap.innerHTML = '';
+      if(movedArr.length){
+        const lbl = document.createElement('div'); lbl.style.color='#9fb3c8'; lbl.textContent = 'Moved tiles in this compute:';
+        movedTilesWrap.appendChild(lbl);
+        const wrap = document.createElement('div'); wrap.style.marginTop='6px'; movedTilesWrap.appendChild(wrap);
+        for(const mv of movedArr){
+          const p = document.createElement('span'); p.className='pill'; p.style.marginRight='6px'; p.textContent = mv; wrap.appendChild(p);
+        }
+      }
+
+      // Save to firebase path if db available
+      const db = getDbForTile(d.target);
+      if(!db){
+        saveStatus.textContent = 'Firebase not configured for this tile range.';
+        w.terminate();
+        return;
+      }
+      const key = stateKey(snapshot);
+      const path = `tiles/${d.target}/${encodeURIComponent(key)}`;
+      const ref = db.ref(path);
+
+      // Special feature: if tile==1 and its ORIGINAL position was bottom-right of board (index size*size-1), save movedTiles field
+      const specialSaveExtra = (d.target === 1 && originalIdx === size*size-1) ? { movedTiles: movedArr } : {};
+
+      ref.get().then(snap=>{
+        if(snap.exists()){
+          saveStatus.textContent = 'Already saved (cached).';
+        } else {
+          const payload = { moves: moves || [], length: moves?moves.length:0, timestamp: Date.now(), ...specialSaveExtra };
+          ref.set(payload).then(()=>{
+            saveStatus.textContent = 'Saved ✅';
+          }).catch(e=>{
+            saveStatus.textContent = 'Save failed: '+e.message;
+          });
+        }
+      }).catch(err=>{
+        saveStatus.textContent = 'DB check failed: '+err.message;
+      });
+
+      w.terminate();
+    }
+  };
+  w.postMessage({type:'compute_tile', state: snapshot, size, targetTile: tnum});
+});
+
+/* manual save from card (if user wants) */
 cardSave.addEventListener('click', ()=>{
   const t = Number(metaTile.textContent);
   if(!t || isNaN(t)){ alert('No target tile in card'); return; }
@@ -964,15 +1012,14 @@ cardSave.addEventListener('click', ()=>{
   }).catch(err=>{ saveStatus.textContent = 'DB check failed: '+err.message; });
 });
 
-/* custom wrapper toggle & compute-info */
+/* toggle custom UI etc */
 setCustomBtn.addEventListener('click', ()=>{ customWrapper.style.display = (customWrapper.style.display === 'block')? 'none' : 'block'; });
 computeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display = 'flex'; });
 closeInfoBtn && closeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display = 'none'; });
 computeInfoOverlay.addEventListener('click', (e)=>{ if(e.target === computeInfoOverlay) computeInfoOverlay.style.display='none'; });
 
-/* when grid is created we call populateCustomSelectors() in createGrid */
-/* initial note: custom selectors populated on createGrid; if you want them earlier, call populateCustomSelectors() */
-
+/* populate selectors once grid created; user can call createGrid by Start Game */
+/* End of script */
 </script>
 </body>
 </html>
