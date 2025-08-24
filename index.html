@@ -1,212 +1,200 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="bn" class="scroll-smooth">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>3D Periodic Table</title>
+  <title>Sliding Puzzle — Solver (Stages+Progress+URL)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase compat libs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
   <style>
-    :root{
-      --bg:#06060a;
-      --panel:#0f1116;
-      --card:#101219;
-      --muted:#9aa4b2;
-      --text:#e8ecf1;
-      --ring:#212432;
+    body { background:#0d1117; color:#c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    #homeScreen,#gameContainer { background:#161b22cc; box-shadow:0 8px 24px rgba(12,17,23,0.6); }
+    #toggleSlider { background:#238636; }
+    .tile {
+      position:absolute;
+      width: calc(100% / var(--grid-size) - 0.75rem);
+      height: calc(100% / var(--grid-size) - 0.75rem);
+      display:flex; align-items:center; justify-content:center;
+      border-radius:0.5rem; cursor:pointer; user-select:none;
+      font-size:2.5rem; font-weight:800; color:#e1e4e8;
+      background:linear-gradient(145deg,#3a3f4b,#2c303a);
+      box-shadow:0 6px 12px rgba(0,0,0,0.8), inset 0 3px 6px rgba(255,255,255,0.05);
+      transition: transform 0.3s ease;
+      text-shadow:0 0 4px #0008; backface-visibility:hidden;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans',Arial;color:var(--text);background:
-      radial-gradient(900px 500px at 80% -10%, #0b0c12, var(--bg));}
-    #app{position:relative; width:100%; height:100%; overflow:hidden}
+    .tile.hard { font-size:1.5rem; }
+    .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.1) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
+    .tile.empty { background:transparent; box-shadow:none; cursor:default; pointer-events:none; }
+    #grid { position:relative; width:100%; height:100%; --grid-size:3; }
+    #modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; z-index:100; }
+    #modal { background:#21262d; padding:2rem; border-radius:1rem; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.7); }
+    #modal h2 { font-size:2rem; margin-bottom:1rem; color:#58a6ff; }
+    #modal button { margin-top:1rem; padding:0.75rem 1.5rem; background:#238636; color:white; border:none; border-radius:0.5rem; font-size:1rem; cursor:pointer; transition:background 0.2s; }
+    #modal button:hover { background:#2ea043; }
+    #controls { width:100%; max-width:40rem; margin-top:36px; display:none; justify-content:center; gap:12px; align-items:center; }
 
-    /* Views */
-    .view{position:absolute; inset:0; display:none}
-    .view.active{display:block}
+    .controls-column { width:100%; display:flex; flex-direction:column; gap:10px; align-items:center; }
+    .btn-wide { width:100%; max-width:360px; padding:0.72rem 1.2rem; border-radius:0.75rem; font-size:1.05rem; font-weight:700; cursor:pointer; color:white; border:none; box-shadow:0 8px 20px rgba(0,0,0,0.6); }
+    #solveBtn { background:#16a34a; }
+    #setCustomBtn { background:#0ea5a4; }
+    #solveBtn:hover{ background:#169e43; transform:translateY(-2px); }
+    #setCustomBtn:hover{ background:#119191; transform:translateY(-2px); }
+    #solveBtn:disabled{ background:#285c38; cursor:not-allowed; opacity:.85; transform:translateY(0); }
 
-    /* Sign-in */
-    .signin{display:grid; place-items:center; padding:20px}
-    .signin-card{width:min(640px,94vw); background:linear-gradient(180deg,#0c0d13,#0a0b11); border-radius:18px; padding:28px; border:1px solid var(--ring); box-shadow:0 20px 60px rgba(0,0,0,.6)}
-    .brand{font-size:28px; font-weight:800; margin-bottom:6px}
-    .subtitle{color:var(--muted); margin-bottom:18px}
-    .btn{appearance:none;border:0;padding:12px 16px;border-radius:12px;background:linear-gradient(180deg,#182033,#0f1624);color:var(--text);cursor:pointer;font-weight:700}
-    .btn-google{display:inline-flex;align-items:center;gap:10px;padding:12px 18px}
-    .tiny{font-size:13px;color:var(--muted);margin-top:10px}
+    #customWrapper { width:100%; max-width:360px; display:none; margin-top:6px; }
+    #customInputArea { display:flex; gap:8px; align-items:center; }
+    #customInput { flex:1; padding:0.6rem 0.75rem; border-radius:0.6rem; background:#0b1116; color:#e6eef6; border:1px solid #253036; font-family:monospace; font-size:0.95rem; }
+    #computeBtn { padding:0.5rem 0.9rem; background:#7c3aed; color:white; border-radius:0.6rem; cursor:pointer; border:none; font-weight:700; }
+    #computeBtn:hover{ background:#6a2bd1; }
+    #computeInfoBtn { margin-top:8px; background:transparent; color:#9fb3c8; border:none; cursor:pointer; text-decoration:underline; }
 
-    /* Topbar */
-    .topbar{position:fixed;left:0;right:0;top:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:rgba(6,7,10,.6);backdrop-filter:blur(6px);border-bottom:1px solid var(--ring);z-index:40}
-    .topbar .title{font-weight:800}
-    .userbadge{display:flex;align-items:center;gap:10px;color:var(--muted)}
-    .avatar{width:36px;height:36px;border-radius:10px;background:#0d1116;overflow:hidden}
-
-    /* Table */
-    .table-wrap{position:absolute;inset:56px 0 0 0;overflow:auto;padding:18px}
-    .legend{color:var(--muted);font-size:13px;margin-bottom:10px}
-    .grid{--cols:18;display:grid;grid-template-columns:repeat(var(--cols), minmax(40px,1fr));gap:10px;width:min(1400px,96vw);margin:0 auto}
-    .cell{position:relative;min-height:68px;padding:8px;border-radius:12px;background:var(--card);border:1px solid var(--ring);display:grid;grid-template-rows:auto 1fr;cursor:pointer;overflow:hidden}
-    .cell.empty{background:transparent;border-color:transparent;pointer-events:none}
-    .cell .meta{display:flex;justify-content:flex-end;gap:8px;color:var(--muted);font-size:12px}
-    .cell .symbol{justify-self:center;align-self:center;font-weight:800;font-size:18px;letter-spacing:.3px}
-    .cell .name{justify-self:center;font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
-
-    /* f-block */
-    .fblock-row{margin-top:12px}
-
-    /* Atom view */
-    .atom-wrap{position:absolute;inset:56px 0 0 0;display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}
-    .toolbar{display:flex;align-items:center;gap:16px;padding:12px 18px;border-bottom:1px solid var(--ring);background:rgba(6,7,10,.6);backdrop-filter:blur(6px)}
-    .toolbar .check{display:flex;align-items:center;gap:8px}
-    #rendererHost{position:relative;width:100%;height:100%;overflow:hidden}
-    .aboutbar{display:flex;justify-content:center;padding:12px}
-
-    /* Bottom sheet */
-    .sheet{position:fixed;left:0;right:0;bottom:-100%;background:var(--panel);border-top-left-radius:14px;border-top-right-radius:14px;box-shadow:0 -20px 60px rgba(0,0,0,.6);z-index:60;transition:bottom .28s ease}
-    .sheet.open{bottom:0}
-    .sheet-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--ring)}
-    .sheet-body{height:min(68vh,560px);padding:0;overflow:hidden}
-
-    /* Owner modal */
-    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:70}
-    .modal-backdrop.open{display:flex}
-    .modal{width:min(720px,96vw);background:linear-gradient(180deg,#0b0c11,#0d0f14);border-radius:12px;padding:14px;border:1px solid var(--ring)}
-    .form{display:grid;gap:10px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .label{font-size:13px;color:var(--muted);margin-bottom:6px}
-    .input,.color{width:100%;padding:10px;border-radius:10px;border:1px solid var(--ring);background:#0b0d12;color:var(--text)}
-
-    /* responsive */
-    @media (max-width:720px){
-      .grid{grid-template-columns:repeat(10, minmax(36px,1fr));gap:8px}
-      .cell{min-height:56px}
+    #thinkingSmall { display:block; margin-top:6px; font-size:0.85em; color:#ddd; }
+    #thinking-container {
+      max-width: 360px;
+      margin: 20px auto 40px auto;
+      padding: 18px 22px;
+      background-color: #202124;
+      border-radius: 14px;
+      box-shadow:0 0 0 1px rgba(255,255,255,0.1), 0 1px 3px rgba(0,0,0,0.4);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #e8eaed;
+      user-select: none;
     }
+    #thinking-text { font-size: 1.3rem; font-weight: 600; position: relative; overflow: hidden; display: inline-block; white-space: nowrap; background: linear-gradient(90deg,#e8eaed 20%,#121212 40%,#e8eaed 60%); background-repeat: no-repeat; background-size: 200% 100%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shine-slide 2.5s linear infinite; }
+    @keyframes shine-slide { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    #thinking-subtext { margin-top: 12px; font-style: italic; font-weight: 400; color: #c7c7c7; min-height: 26px; font-size: 1rem; white-space: nowrap; }
+
+    #progressBarWrap { width:100%; max-width:34rem; margin:20px auto 0 auto; background:#23272e; border-radius:0.7rem; height:1.2rem; box-shadow:0 2px 8px #0005; overflow:hidden; position:relative; }
+    #progressBar { height:100%; background:linear-gradient(90deg,#238636,#58a6ff); width:0%; transition:width 0.5s; }
+    #progressText { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:.98rem; color:#fff; font-weight:700; text-shadow:0 2px 8px #0009; pointer-events:none; }
+
+    #computeInfoOverlay { display:none; position:fixed; inset:0; z-index:140; display:flex; align-items:flex-end; justify-content:center; pointer-events:none; }
+    #computeInfoPanel { width:100%; max-width:720px; margin:0 auto; pointer-events:auto; }
+    #computeInfoInner { background:#0f1720; color:#cfe6ff; padding:18px; border-top-left-radius:12px; border-top-right-radius:12px; box-shadow:0 -8px 40px rgba(0,0,0,0.7); }
+
+    #computeCardOverlay { display:none; position:fixed; inset:0; align-items:center; justify-content:center; z-index:150; }
+    #computeCard { width:min(680px,95%); background:rgba(16,20,24,0.94); border-radius:12px; padding:18px; color:#e6eef6; box-shadow:0 10px 40px rgba(0,0,0,0.7); backdrop-filter: blur(6px); }
+    #computeCard h3 { font-size:1.25rem; margin-bottom:6px; color:#58a6ff; }
+    #computeCard .moves { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .pill { background:#17202a; padding:6px 8px; border-radius:8px; font-weight:700; }
+    #computeCard .bottom { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+    #saveStatus { margin-right:auto; align-self:center; color:#9fb3c8; }
+
+    .dim-background { filter: blur(4px) brightness(0.6); pointer-events: none; }
+
+    @media (max-width:640px){ #controls{ padding:0 12px; margin-top:26px; } .btn-wide{ max-width:92%; } }
   </style>
 </head>
-<body>
-  <div id="app">
-    <!-- Sign In View -->
-    <section id="view-signin" class="view signin active">
-      <div class="signin-card" role="dialog" aria-labelledby="signin-title">
-        <div id="signin-title" class="brand">3D Periodic Table</div>
-        <div class="subtitle">Sign in with Google to explore interactive 3D atoms</div>
-        <button id="btn-google" class="btn btn-google" aria-label="Sign in with Google">
-          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.6 32.9 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C33.9 6.1 29.2 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.9z"/></svg>
-          Sign in with Google
-        </button>
-        <div class="tiny">Sign in is required to view and interact with the periodic table.</div>
-      </div>
-    </section>
+<body class="min-h-screen flex flex-col items-center justify-center p-6">
 
-    <!-- Table View -->
-    <section id="view-table" class="view" aria-hidden="true">
-      <div class="topbar">
-        <div class="title">3D Periodic Table</div>
-        <div class="userbadge">
-          <div id="userEmail" class="email">…</div>
-          <div class="avatar"><img id="userPhoto" alt="" style="width:100%;height:100%;object-fit:cover;display:none" /></div>
-          <button id="btn-logout" class="btn" title="Sign out">Logout</button>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <div class="legend">এক্সপ্লোর: single-click → atom view • owner double-click → edit modal</div>
-        <div id="grid-main" class="grid" aria-label="Periodic Table Grid"></div>
-        <div class="fblock-row">
-          <div id="grid-f" class="grid" style="--cols:15"></div>
-        </div>
-        <div class="fblock-row">
-          <div id="grid-f2" class="grid" style="--cols:15"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Atom View -->
-    <section id="view-atom" class="view" aria-hidden="true">
-      <div class="topbar">
-        <div class="title"><span id="atomTitle">Element</span></div>
-        <div class="userbadge">
-          <button id="btn-back" class="btn">← Table</button>
-          <button id="btn-about-atom" class="btn">About</button>
-          <button id="btn-logout2" class="btn">Logout</button>
-        </div>
-      </div>
-
-      <div class="atom-wrap">
-        <div class="toolbar">
-          <label class="check"><input type="checkbox" id="toggleNucleus" /> Hide orbits and show nucleus</label>
-          <div style="color:var(--muted);font-size:13px">Proton = green • Neutron = orange • Electron = light</div>
-        </div>
-
-        <div id="rendererHost" role="region" aria-label="3D atom view"></div>
-
-        <div class="aboutbar">
-          <button id="btn-about" class="btn">About</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- About sheet -->
-    <div id="aboutSheet" class="sheet" aria-hidden="true">
-      <div class="sheet-header">
-        <div id="aboutTitle">About</div>
-        <button id="aboutClose" class="btn">Close</button>
-      </div>
-      <div class="sheet-body">
-        <iframe id="aboutFrame" src="about:blank" referrerpolicy="no-referrer" style="width:100%;height:100%;border:0;background:#07070b"></iframe>
+  <!-- Home -->
+  <div id="homeScreen" class="w-full max-w-md p-8 rounded-3xl text-center mb-10 select-none">
+    <h1 class="text-white text-5xl font-extrabold mb-8 drop-shadow-lg">Sliding Puzzle Game</h1>
+    <div class="relative inline-block w-full bg-gray-800 rounded-full overflow-hidden shadow-inner">
+      <div id="toggleSlider" class="absolute top-0 left-0 rounded-full h-full w-1/3 transition-all duration-300 ease-in-out"></div>
+      <div class="flex text-gray-300 font-semibold text-xl cursor-pointer">
+        <div data-mode="easy" class="flex-1 py-4 z-10">Easy</div>
+        <div data-mode="normal" class="flex-1 py-4 z-10">Normal</div>
+        <div data-mode="hard" class="flex-1 py-4 z-10">Hard</div>
       </div>
     </div>
-
-    <!-- Owner Edit Modal (double-click opens for owner) -->
-    <div id="ownerModal" class="modal-backdrop" role="dialog" aria-modal="true">
-      <div class="modal">
-        <h3 id="modalTitle">Edit Element</h3>
-        <div class="form">
-          <div>
-            <div class="label">Atom short-name (সংকেত)</div>
-            <input id="inSymbol" class="input" placeholder="H" maxlength="3" />
-          </div>
-          <div>
-            <div class="label">Atom full name</div>
-            <input id="inName" class="input" placeholder="Hydrogen" />
-          </div>
-          <div class="row">
-            <div>
-              <div class="label">Proton number</div>
-              <input id="inProtons" class="input" type="number" min="0" />
-            </div>
-            <div>
-              <div class="label">Electron number</div>
-              <input id="inElectrons" class="input" type="number" min="0" />
-            </div>
-          </div>
-          <div>
-            <div class="label">Neutron number</div>
-            <input id="inNeutrons" class="input" type="number" min="0" />
-          </div>
-          <div>
-            <div class="label">Block color</div>
-            <input id="inColor" class="color" type="color" value="#1a1e2f" />
-          </div>
-          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">
-            <button id="btn-cancel" class="btn">Cancel</button>
-            <button id="btn-save" class="btn" style="background:linear-gradient(180deg,#0e734f,#0b5a3e);border-color:#137a57">Submit</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
+    <button id="startBtn" class="mt-10 w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl text-2xl font-semibold shadow-lg transition duration-300">
+      Start Game
+    </button>
+    <p class="text-sm text-gray-400 mt-3">গেম শুরু হলে নিচের <strong>Solve</strong> বাটন দিয়ে বট চালাও (বা কীবোর্ডে <strong>B</strong> চাপতে পারো)।</p>
   </div>
 
-  <!-- Firebase (compat) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- Game container -->
+  <div id="gameContainer" class="hidden w-full max-w-lg aspect-square rounded-3xl p-6 flex flex-col relative">
+    <div id="grid"></div>
+  </div>
 
-  <!-- three.js local file (must be in same directory) -->
-  <script src="./three.js"></script>
+  <!-- Progress bar -->
+  <div id="progressBarWrap" style="display:none;">
+    <div id="progressBar"></div>
+    <div id="progressText"></div>
+  </div>
 
-  <script>
-    // ====== CONFIG ======
-    const OWNER_EMAIL = 'samiulhaquerafsan@gmail.com';
-    const firebaseConfig = {
-      apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
+  <!-- Controls below board (hidden on home) -->
+  <div id="controls">
+    <div class="controls-column">
+      <div id="thinkingSmall" aria-hidden="true"></div>
+      <div id="winner-message"></div>
+      <div id="game-board"></div>
+      <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
+        <div id="thinking-text">Solving With Stages...</div>
+      </div>
+
+      <button id="solveBtn" class="btn-wide" title="Bot Solve">Solve</button>
+      <button id="setCustomBtn" class="btn-wide">Set Custom Position</button>
+
+      <div id="customWrapper">
+        <div id="customInputArea">
+          <input id="customInput" placeholder="উদাহরণ: 1 2 3 ... 24 _ (25 টোকেন, _ হল empty)" />
+          <button id="computeBtn">Compute</button>
+        </div>
+        <button id="computeInfoBtn" style="background:transparent;border:none;color:#9fb3c8;margin-top:8px;text-decoration:underline;">Compute ও Efficiency সম্পর্কে বিস্তারিত দেখুন</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modalOverlay" class="flex">
+    <div id="modal">
+      <h2>🎉 You Solved It!</h2>
+      <p class="text-gray-300">Congratulations on completing the puzzle.</p>
+      <button id="closeModal">Close</button>
+    </div>
+  </div>
+
+  <!-- Compute info slide-up modal -->
+  <div id="computeInfoOverlay" style="display:none; position:fixed; inset:0; z-index:140; display:flex; align-items:flex-end; justify-content:center; pointer-events:none;">
+    <div id="computeInfoPanel">
+      <div id="computeInfoInner">
+        <h3 style="color:#58a6ff; font-size:1.2rem; margin-bottom:6px;">Compute & Efficiency</h3>
+        <p style="color:#b9d0e6; line-height:1.45;">Compute বাটনে আপনি যে custom state দেবেন, সেটাকে আমরা targeted BFS/limited-search দিয়ে নির্দিষ্ট tile কে তার goal position-এ বসাতে চেষ্টা করব — পুরো 5×5-কে IDA/complete solve করার পরিবর্তে আমাদের লক্ষ্য একক টাইলের অবস্থান ঠিক করা।</p>
+        <ul style="color:#9fb3c8; margin-top:8px;">
+          <li>• compute-এ node/time limits আছে — বড় search-এ ব্রাউজার freeze না করাই প্রধান উদ্দেশ্য।</li>
+          <li>• Firebase-এ cached result থাকলে সেটাকে আগে দেখানো হবে — নতুন compute করার দরকার হবে না।</li>
+          <li>• আপনি টাইলগুলো আলাদাভাবে 1 থেকে 24 পর্যন্ত serially compute ও save করলে পরে ওই টাইল যেই অবস্থাতেই থাকুক না কেন cached moves কাজে লাগবে।</li>
+          <li>• আপনি 1..8,9..16,17..24 টুকরা তিনটি আলাদা Firebase প্রজেক্টে রাখতে পারবেন — আপনি যে configs দিলেন সেগুলো বসানো আছে।</li>
+        </ul>
+        <div style="display:flex; justify-content:space-between; margin-top:12px;">
+          <button id="closeInfoBtn" style="background:#16a34a; color:white; padding:8px 12px; border-radius:8px; border:none;">Close</button>
+          <button id="learnMoreBtn" style="background:transparent; color:#9fb3c8; border:none; text-decoration:underline;">More details (dev)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compute result card overlay -->
+  <div id="computeCardOverlay">
+    <div id="computeCard">
+      <div style="display:flex; gap:12px; align-items:start;">
+        <div style="flex:1;">
+          <h3 id="cardTitle">Compute Result</h3>
+          <div id="cardMeta" style="color:#9fb3c8; font-size:0.95rem;">Tile: <strong id="metaTile">-</strong> • Pos: <strong id="metaPos">-</strong></div>
+          <div style="margin-top:8px;">Moves:</div>
+          <div id="movesList" class="moves"></div>
+          <div class="bottom">
+            <div id="saveStatus">Not saved yet</div>
+            <button id="cardClose" style="background:#444; color:white; padding:8px 12px; border-radius:8px; border:none;">Close</button>
+            <button id="cardSave" style="background:#0ea5a4; color:white; padding:8px 12px; border-radius:8px; border:none;">Save to Firebase</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- User-provided 3 firebase configs inserted ---------- */
+const config1 = {
+  apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
   authDomain: "chatstudio-agent.firebaseapp.com",
   databaseURL: "https://chatstudio-agent-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "chatstudio-agent",
@@ -214,357 +202,777 @@
   messagingSenderId: "626338448826",
   appId: "1:626338448826:web:67936971701c3466d90983",
   measurementId: "G-ZHNZHMYC0B"
-    };
+};
 
-    // ====== INIT FIREBASE ======
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.database();
+const config2 = {
+  apiKey: "AIzaSyAKd2WmThKb4OM9pv0Bx9vtunmGpRGxczM",
+  authDomain: "puzzle-solver-5-2.firebaseapp.com",
+  databaseURL: "https://puzzle-solver-5-2-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "puzzle-solver-5-2",
+  storageBucket: "puzzle-solver-5-2.firebasestorage.app",
+  messagingSenderId: "221283910343",
+  appId: "1:221283910343:web:0bef0b54fe26e594c8f4e2"
+};
 
-    // ====== STATE ======
-    let currentUser = null;
-    let elementsCache = {}; // elements data keyed by atomic number
-    let currentAtomic = null; // for owner modal
+const config3 = {
+  apiKey: "AIzaSyDohgyc4pRldMVxbFRTkHnNfAIczf8JHMo",
+  authDomain: "puzzle-solver-4-1.firebaseapp.com",
+  databaseURL: "https://puzzle-solver-4-1-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "puzzle-solver-4-1",
+  storageBucket: "puzzle-solver-4-1.firebasestorage.app",
+  messagingSenderId: "422133823015",
+  appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
+};
+/* ------------------------------------------------------------ */
 
-    // ====== ROUTER HELPERS ======
-    function show(viewId){
-      document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-      const v = document.getElementById(viewId);
-      if(v) v.classList.add('active');
+/* ---------- Full app logic (solver + UI + firebase use) ---------- */
+
+// UI refs
+const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
+let currentMode = 'easy';
+const homeScreen = document.getElementById('homeScreen');
+const gameContainer = document.getElementById('gameContainer');
+const gridEl = document.getElementById('grid');
+const toggleSlider = document.getElementById('toggleSlider');
+const startBtn = document.getElementById('startBtn');
+const modalOverlay = document.getElementById('modalOverlay');
+const closeModal = document.getElementById('closeModal');
+const controls = document.getElementById('controls');
+const solveBtn = document.getElementById('solveBtn');
+const setCustomBtn = document.getElementById('setCustomBtn');
+const customWrapper = document.getElementById('customWrapper');
+const customInput = document.getElementById('customInput');
+const computeBtn = document.getElementById('computeBtn');
+const computeInfoBtn = document.getElementById('computeInfoBtn');
+const computeInfoOverlay = document.getElementById('computeInfoOverlay');
+const closeInfoBtn = document.getElementById('closeInfoBtn');
+const computeCardOverlay = document.getElementById('computeCardOverlay');
+const metaTile = document.getElementById('metaTile');
+const metaPos = document.getElementById('metaPos');
+const movesList = document.getElementById('movesList');
+const cardClose = document.getElementById('cardClose');
+const cardSave = document.getElementById('cardSave');
+const saveStatus = document.getElementById('saveStatus');
+const progressBarWrap = document.getElementById('progressBarWrap');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
+let size, tiles = [], emptyIndex;
+
+// Mode switch with URL update
+document.querySelectorAll('[data-mode]').forEach(el=>{
+  el.addEventListener('click', ()=> {
+    currentMode = el.dataset.mode;
+    const idx = ['easy','normal','hard'].indexOf(currentMode);
+    toggleSlider.style.left = `${idx*33.3333}%`;
+    const p = modes[currentMode].path;
+    if(location.pathname!=="/"+p) history.replaceState({}, '', "/"+p);
+  });
+});
+(function setModeFromUrl(){
+  const path = location.pathname.replace(/^\//,'');
+  if(path && Object.values(modes).some(m=>m.path===path)){
+    currentMode = Object.keys(modes).find(k=>modes[k].path===path) || "easy";
+  }
+  const idx = ['easy','normal','hard'].indexOf(currentMode);
+  toggleSlider.style.left = `${idx*33.3333}%`;
+})();
+
+function getTranslate(index){
+  const row = Math.floor(index/size), col = index%size;
+  const tileSize = gridEl.clientWidth/size;
+  return { x: col*tileSize, y: row*tileSize };
+}
+
+function createGrid(gridSize){
+  size = gridSize;
+  gridEl.style.setProperty('--grid-size', size);
+  gridEl.innerHTML = '';
+  tiles = Array.from({length:size*size-1},(_,i)=>i+1);
+  tiles.push(null);
+  shuffleTiles(tiles,size);
+  emptyIndex = tiles.indexOf(null);
+
+  tiles.forEach((num,i)=>{
+    if(num===null) return;
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    if(currentMode==='hard') tile.classList.add('hard');
+    tile.textContent = num;
+    const {x,y} = getTranslate(i);
+    tile.style.transform = `translate(${x}px,${y}px)`;
+    tile.dataset.number = num;
+    tile.dataset.position = i;
+    gridEl.appendChild(tile);
+  });
+  controls.style.display = 'flex';
+  progressBarWrap.style.display = 'block';
+  updateProgressBar();
+}
+
+function shuffleTiles(arr,s){
+  do{
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
     }
-    function routeTo(path){
-      try{ history.pushState({}, '', path); }catch(e){}
-      window.location.hash = '#'+path;
-      handleRoute();
-    }
-    function getPath(){
-      if(location.hash && location.hash.startsWith('#')) return location.hash.slice(1);
-      return location.pathname && location.pathname !== '/' ? location.pathname : '/';
-    }
-    window.addEventListener('popstate', handleRoute);
-    window.addEventListener('hashchange', handleRoute);
+  }while(!isSolvable(arr,s)||isSolved(arr));
+}
 
-    function handleRoute(){
-      if(!currentUser){ show('view-signin'); return; }
-      const p = getPath().replace(/^\/+|\/+$/g,'');
-      if(!p || p === 'table' || p === ''){ show('view-table'); return; }
-      openAtomBySlug(p);
-    }
+function isSolvable(arr,s){
+  let inv=0, flat=arr.filter(x=>x!==null);
+  for(let i=0;i<flat.length;i++)
+    for(let j=i+1;j<flat.length;j++)
+      if(flat[i]>flat[j]) inv++;
+  if(s%2) return inv%2===0;
+  const er = Math.floor(arr.indexOf(null)/s);
+  return er%2?inv%2===0:inv%2!==0;
+}
 
-    // ====== AUTH ======
-    document.getElementById('btn-google').addEventListener('click', async ()=>{
-      const provider = new firebase.auth.GoogleAuthProvider();
-      try{ await auth.signInWithPopup(provider); } catch(err){ alert('Sign-in failed: '+err.message); }
-    });
-    document.getElementById('btn-logout').addEventListener('click', ()=> auth.signOut());
-    document.getElementById('btn-logout2').addEventListener('click', ()=> auth.signOut());
+function isSolved(arr){
+  for(let i=0;i<arr.length-1;i++) if(arr[i]!==i+1) return false;
+  return arr[arr.length-1]===null;
+}
 
-    auth.onAuthStateChanged(user=>{
-      currentUser = user;
-      if(!user){ show('view-signin'); return; }
-      // set user info
-      const emailEl = document.getElementById('userEmail');
-      const photoEl = document.getElementById('userPhoto');
-      emailEl.textContent = user.email || 'Signed in';
-      if(user.photoURL){ photoEl.src = user.photoURL; photoEl.style.display='block'; }
-      // attach DB listeners
-      attachDBListeners();
-      // go to table
-      routeTo('/table');
-    });
+function tryMove(tile){
+  const tilePos = +tile.dataset.position;
+  const emptyPos = emptyIndex;
+  const r1 = Math.floor(tilePos/size), c1 = tilePos%size;
+  const r2 = Math.floor(emptyPos/size), c2 = emptyPos%size;
+  const adj = (r1===r2 && Math.abs(c1-c2)===1) || (c1===c2 && Math.abs(r1-r2)===1);
+  if(!adj) return false;
+  [tiles[tilePos],tiles[emptyPos]]=[tiles[emptyPos],tiles[tilePos]];
+  const {x,y} = getTranslate(emptyPos);
+  tile.style.transform = `translate(${x}px,${y}px)`;
+  tile.dataset.position = emptyPos;
+  emptyIndex = tilePos;
+  updateProgressBar();
+  return true;
+}
 
-    // ====== DB ======
-    let dbAttached = false;
-    function attachDBListeners(){
-      if(dbAttached) return; dbAttached=true;
-      db.ref('elements').on('value', snap=>{
-        elementsCache = snap.val() || {};
-        renderTable();
-        // refresh current atom if open
-        const p = getPath().replace(/^\/+|\/+$/g,'');
-        if(p && p !== 'table' && p !== '') openAtomBySlug(p, true);
-      });
-    }
+gridEl.addEventListener('click', e=>{
+  const tile = e.target.closest('.tile');
+  if(!tile) return;
+  if(tryMove(tile) && isSolved(tiles)){
+    modalOverlay.style.display = 'flex';
+    updateProgressBar();
+  }
+});
 
-    // ====== PERIODIC TABLE LAYOUT ======
-    const mainLayout = [
-      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-      [3,4,0,0,0,0,0,0,0,0,0,0,5,6,7,8,9,10],
-      [11,12,0,0,0,0,0,0,0,0,0,0,13,14,15,16,17,18],
-      [19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36],
-      [37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54],
-      [55,56,0,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86],
-      [87,88,0,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118],
-    ];
-    const fBlock1 = [57,58,59,60,61,62,63,64,65,66,67,68,69,70,71];
-    const fBlock2 = [89,90,91,92,93,94,95,96,97,98,99,100,101,102,103];
+startBtn.addEventListener('click', ()=>{
+  homeScreen.classList.add('hidden');
+  gameContainer.classList.remove('hidden');
+  createGrid(modes[currentMode].size);
+});
 
-    const gridMain = document.getElementById('grid-main');
-    const gridF = document.getElementById('grid-f');
-    const gridF2 = document.getElementById('grid-f2');
+closeModal.addEventListener('click', ()=>{ modalOverlay.style.display = 'none'; });
 
-    function renderTable(){
-      gridMain.innerHTML = '';
-      mainLayout.forEach(row=>{
-        row.forEach(num=>{
-          if(num===0){
-            const div=document.createElement('div'); div.className='cell empty'; gridMain.appendChild(div); return;
-          }
-          const data = elementsCache[num] || {};
-          const cell = document.createElement('div'); cell.className='cell'; cell.dataset.num=num;
-          if(data.color) cell.style.background = data.color;
-          // meta
-          const meta = document.createElement('div'); meta.className='meta';
-          const numEl = document.createElement('div'); numEl.className='num'; numEl.textContent = num;
-          const symEl = document.createElement('div'); symEl.className='sym'; symEl.textContent = data.shortName||'';
-          meta.append(numEl, symEl);
-          const symbol = document.createElement('div'); symbol.className='symbol'; symbol.textContent = data.shortName? data.shortName : num;
-          const name = document.createElement('div'); name.className='name'; name.textContent = data.name||'';
-          cell.append(meta, symbol, name);
-          cell.addEventListener('click', ()=> onCellClick(num));
-          cell.addEventListener('dblclick', (e)=> onCellDblClick(e, num));
-          gridMain.appendChild(cell);
-        });
-      });
+window.addEventListener('resize', ()=>{
+  tiles.forEach(num=>{
+    if(num===null) return;
+    const tile = [...gridEl.children].find(t=>+t.dataset.number===num);
+    if(!tile) return;
+    const {x,y} = getTranslate(+tile.dataset.position);
+    tile.style.transform = `translate(${x}px,${y}px)`;
+  });
+});
 
-      // f block row 1
-      gridF.innerHTML=''; const label1=document.createElement('div'); label1.className='cell empty'; label1.style.background='transparent'; label1.style.border='0'; label1.textContent='Lanthanides'; gridF.appendChild(label1);
-      fBlock1.forEach(num=>{ const data=elementsCache[num]||{}; const cell=document.createElement('div'); cell.className='cell'; if(data.color) cell.style.background=data.color; cell.dataset.num=num; const meta=document.createElement('div'); meta.className='meta'; const numEl=document.createElement('div'); numEl.className='num'; numEl.textContent=num; const symEl=document.createElement('div'); symEl.className='sym'; symEl.textContent=data.shortName||''; meta.append(numEl,symEl); const symbol=document.createElement('div'); symbol.className='symbol'; symbol.textContent = data.shortName?data.shortName:num; const name=document.createElement('div'); name.className='name'; name.textContent=data.name||''; cell.append(meta,symbol,name); cell.addEventListener('click', ()=> onCellClick(num)); cell.addEventListener('dblclick', (e)=> onCellDblClick(e,num)); gridF.appendChild(cell); });
+// Progress bar calculation
+function calcProgress(arr, sz){
+  if(sz===3) {
+    let cnt=0;
+    for(let i=0;i<8;i++) if(arr[i]===i+1) cnt++;
+    return Math.round(cnt/8*100);
+  }
+  if(sz===4) {
+    let cnt=0;
+    for(let i=0;i<15;i++) if(arr[i]===i+1) cnt++;
+    return Math.round(cnt/15*100);
+  }
+  if(sz===5){
+    let stage1=0, total=0;
+    const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
+    for(const i of st1idx) if(arr[i]===i+1) stage1++;
+    for(let i=0;i<24;i++) if(arr[i]===i+1) total++;
+    return Math.round((stage1/12*70)+(total/24*30));
+  }
+  return 0;
+}
 
-      // f block row 2
-      gridF2.innerHTML=''; const label2=document.createElement('div'); label2.className='cell empty'; label2.style.background='transparent'; label2.style.border='0'; label2.textContent='Actinides'; gridF2.appendChild(label2);
-      fBlock2.forEach(num=>{ const data=elementsCache[num]||{}; const cell=document.createElement('div'); cell.className='cell'; if(data.color) cell.style.background=data.color; cell.dataset.num=num; const meta=document.createElement('div'); meta.className='meta'; const numEl=document.createElement('div'); numEl.className='num'; numEl.textContent=num; const symEl=document.createElement('div'); symEl.className='sym'; symEl.textContent=data.shortName||''; meta.append(numEl,symEl); const symbol=document.createElement('div'); symbol.className='symbol'; symbol.textContent = data.shortName?data.shortName:num; const name=document.createElement('div'); name.className='name'; name.textContent=data.name||''; cell.append(meta,symbol,name); cell.addEventListener('click', ()=> onCellClick(num)); cell.addEventListener('dblclick', (e)=> onCellDblClick(e,num)); gridF2.appendChild(cell); });
-    }
+function updateProgressBar(){
+  if(!tiles||!size) return;
+  const perc = calcProgress(tiles,size);
+  progressBar.style.width = perc+"%";
+  progressText.textContent = perc+"% solved";
+  if(perc===100) progressText.textContent = "🎉 Puzzle Solved!";
+}
 
-    function onCellClick(num){
-      const data = elementsCache[num];
-      let slug = data && data.slug ? data.slug : ('element-'+num);
-      routeTo('/'+slug);
-    }
+// ----------- Worker-based multi-stage hybrid solver -----------
+function solverWorkerFunction(){
+  self.onmessage = function(ev){
+    try{
+      const {type, state, size, targetTile} = ev.data;
+      if(type !== 'solve' && type !== 'compute_tile') return;
+      const startState = state.slice();
 
-    function onCellDblClick(e, num){
-      if(!currentUser) return;
-      if(currentUser.email !== OWNER_EMAIL) return; // only owner
-      openOwnerModal(num);
-    }
+      function idxToRC(i){ return {r: Math.floor(i/size), c: i%size}; }
+      const goalPos = {}; for(let v=1; v<=size*size-1; v++) goalPos[v] = idxToRC(v-1);
 
-    // ====== OWNER MODAL ======
-    const backdrop = document.getElementById('ownerModal');
-    const inSymbol = document.getElementById('inSymbol');
-    const inName = document.getElementById('inName');
-    const inProtons = document.getElementById('inProtons');
-    const inElectrons = document.getElementById('inElectrons');
-    const inNeutrons = document.getElementById('inNeutrons');
-    const inColor = document.getElementById('inColor');
-    document.getElementById('btn-cancel').addEventListener('click', ()=> backdrop.classList.remove('open'));
-    backdrop.addEventListener('click', (e)=>{ if(e.target===backdrop) backdrop.classList.remove('open')});
-
-    document.getElementById('btn-save').addEventListener('click', async ()=>{
-      if(currentAtomic==null) return;
-      const num = currentAtomic;
-      const symbol = (inSymbol.value||'').trim();
-      const name = (inName.value||'').trim();
-      const protons = Math.max(0, parseInt(inProtons.value||'0'));
-      const electrons = Math.max(0, parseInt(inElectrons.value||'0'));
-      const neutrons = Math.max(0, parseInt(inNeutrons.value||'0'));
-      const color = inColor.value || '#1a1e2f';
-      const slug = (name? name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') : ('element-'+num));
-      const payload = { shortName: symbol, name, protons, electrons, neutrons, color, slug };
-      try{
-        await db.ref('elements/'+num).update(payload);
-        backdrop.classList.remove('open');
-      }catch(err){
-        alert('Save failed: '+ err.message);
-      }
-    });
-
-    function openOwnerModal(num){
-      currentAtomic = num;
-      const data = elementsCache[num] || {};
-      document.getElementById('modalTitle').textContent = `Edit Element #${num}`;
-      inSymbol.value = data.shortName||'';
-      inName.value = data.name||'';
-      inProtons.value = data.protons!=null? data.protons : '';
-      inElectrons.value = data.electrons!=null? data.electrons : '';
-      inNeutrons.value = data.neutrons!=null? data.neutrons : '';
-      inColor.value = data.color||'#1a1e2f';
-      backdrop.classList.add('open');
-    }
-
-    // ====== THREE.JS ATOM VIEW ======
-    let renderer, scene, camera, controls;
-    let nucleusSolid, nucleusGroup = null, orbitGroups = [], electronGroups = [];
-    let animId = null;
-    const host = document.getElementById('rendererHost');
-    const toggleNucleus = document.getElementById('toggleNucleus');
-    const atomTitle = document.getElementById('atomTitle');
-    const aboutBtn = document.getElementById('btn-about');
-    const aboutSheet = document.getElementById('aboutSheet');
-    const aboutFrame = document.getElementById('aboutFrame');
-    const aboutTitle = document.getElementById('aboutTitle');
-    const aboutClose = document.getElementById('aboutClose');
-    document.getElementById('btn-back').addEventListener('click', ()=> routeTo('/table'));
-    document.getElementById('btn-about-atom').addEventListener('click', ()=> aboutSheet.classList.add('open'));
-    aboutClose.addEventListener('click', ()=> aboutSheet.classList.remove('open'));
-    aboutBtn.addEventListener('click', ()=> aboutSheet.classList.add('open'));
-
-    function resetThree(){
-      if(animId) cancelAnimationFrame(animId);
-      if(renderer){ try{ renderer.forceContextLoss(); renderer.domElement.parentNode.removeChild(renderer.domElement);}catch(e){} renderer=null; }
-      orbitGroups = []; electronGroups = []; nucleusGroup=null; nucleusSolid=null;
-      renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
-      renderer.setPixelRatio(window.devicePixelRatio||1);
-      renderer.setSize(host.clientWidth, host.clientHeight);
-      host.innerHTML=''; host.appendChild(renderer.domElement);
-
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x07080e);
-
-      const fov=45, aspect=host.clientWidth/host.clientHeight, near=0.1, far=1000;
-      camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-      camera.position.set(0,1.2,6);
-
-      const light = new THREE.PointLight(0xffffff,1.1,100); light.position.set(10,10,10); scene.add(light);
-      const amb = new THREE.AmbientLight(0x666666); scene.add(amb);
-
-      // Lightweight orbit control fallback
-      let isDown=false, lx=0, ly=0, rx=0, ry=0;
-      renderer.domElement.addEventListener('pointerdown', e=>{ isDown=true; lx=e.clientX; ly=e.clientY; renderer.domElement.setPointerCapture(e.pointerId); });
-      window.addEventListener('pointerup', ()=>{ isDown=false; });
-      window.addEventListener('pointermove', e=>{ if(!isDown) return; rx += (e.clientX-lx)*0.003; ry += (e.clientY-ly)*0.003; lx=e.clientX; ly=e.clientY; camera.position.x = 6*Math.sin(rx); camera.position.z = 6*Math.cos(rx); camera.position.y = Math.max(0.6, Math.min(3, camera.position.y - (e.movementY*0.01))); camera.lookAt(0,0,0); });
-      renderer.domElement.addEventListener('wheel', e=>{ const s = 1 + (e.deltaY>0?0.04:-0.04); camera.position.multiplyScalar(s); camera.lookAt(0,0,0); });
-
-      window.addEventListener('resize', ()=>{ if(!renderer) return; renderer.setSize(host.clientWidth, host.clientHeight); camera.aspect = host.clientWidth/host.clientHeight; camera.updateProjectionMatrix(); });
-    }
-
-    function buildAtomView(data){
-      resetThree();
-
-      // nucleus solid
-      const nucleusGeom = new THREE.SphereGeometry(0.6, 48, 48);
-      const nucleusMat = new THREE.MeshPhongMaterial({color:0xffffff, shininess:80, emissive:0x000000, transparent:true, opacity:0.95});
-      nucleusSolid = new THREE.Mesh(nucleusGeom, nucleusMat);
-      scene.add(nucleusSolid);
-
-      // inner nucleons
-      nucleusGroup = new THREE.Group();
-      const pCount = Math.max(0, parseInt(data.protons||0));
-      const nCount = Math.max(0, parseInt(data.neutrons||0));
-      const pGeom = new THREE.SphereGeometry(0.08, 12, 12);
-      const pMat = new THREE.MeshStandardMaterial({color:0x10B981});
-      const nGeom = new THREE.SphereGeometry(0.08, 12, 12);
-      const nMat = new THREE.MeshStandardMaterial({color:0xF59E0B});
-      const innerR = 0.45;
-      for(let i=0;i<pCount;i++){ const m=new THREE.Mesh(pGeom,pMat); const v=randomPointInSphere(innerR); m.position.set(v.x,v.y,v.z); nucleusGroup.add(m); }
-      for(let i=0;i<nCount;i++){ const m=new THREE.Mesh(nGeom,nMat); const v=randomPointInSphere(innerR); m.position.set(v.x,v.y,v.z); nucleusGroup.add(m); }
-      nucleusGroup.visible = false;
-      scene.add(nucleusGroup);
-
-      // electrons and orbits
-      const eTotal = Math.max(0, parseInt(data.electrons||0));
-      const shells = distributeElectrons(eTotal);
-      const orbitMat = new THREE.LineBasicMaterial({color:0x9aa4b2, linewidth:1});
-      shells.forEach((count, idx)=>{
-        const n = idx+1;
-        const radius = 1.0 + (n * 0.6);
-        const circleGeom = circleGeometry(radius, 128);
-        const ring = new THREE.LineLoop(circleGeom, orbitMat);
-        scene.add(ring); orbitGroups.push(ring);
-        const group = new THREE.Group();
-        for(let i=0;i<count;i++){
-          const angle = (i/count) * Math.PI*2;
-          const eGeom = new THREE.SphereGeometry(0.07, 12, 12);
-          const eMat = new THREE.MeshStandardMaterial({color:0xE8ECF1});
-          const eMesh = new THREE.Mesh(eGeom, eMat);
-          eMesh.userData = { angle, radius, speed: 0.35/(n + 0.5) };
-          eMesh.position.set(Math.cos(angle)*radius, 0, Math.sin(angle)*radius);
-          group.add(eMesh);
+      function manhattanUnfixed(arr, fixedSet){
+        let s = 0;
+        for(let i=0;i<arr.length;i++){
+          const v = arr[i]; if(v==null) continue;
+          const gi = v-1; if(fixedSet && fixedSet.has(gi)) continue;
+          const cur = idxToRC(i), g = goalPos[v];
+          if(!g) continue;
+          s += Math.abs(cur.r - g.r) + Math.abs(cur.c - g.c);
         }
-        electronGroups.push(group);
-        scene.add(group);
-      });
-
-      toggleNucleus.checked = false; applyToggle();
-      animate();
-    }
-
-    function animate(){
-      animId = requestAnimationFrame(animate);
-      electronGroups.forEach(group=>{
-        group.children.forEach(e=>{
-          const ud = e.userData; if(!ud) return;
-          ud.angle += ud.speed * 0.02;
-          e.position.set(Math.cos(ud.angle)*ud.radius, 0, Math.sin(ud.angle)*ud.radius);
-        });
-      });
-      if(renderer && scene && camera) renderer.render(scene, camera);
-    }
-
-    function applyToggle(){
-      const showInner = toggleNucleus.checked;
-      orbitGroups.forEach(o=> o.visible = !showInner);
-      electronGroups.forEach(g=> g.visible = !showInner);
-      nucleusGroup.visible = showInner;
-      nucleusSolid.visible = !showInner;
-    }
-    toggleNucleus.addEventListener('change', applyToggle);
-
-    function randomPointInSphere(r){
-      let x,y,z;
-      do{ x=(Math.random()*2-1); y=(Math.random()*2-1); z=(Math.random()*2-1); } while(x*x+y*y+z*z>1);
-      return new THREE.Vector3(x*r,y*r,z*r);
-    }
-    function circleGeometry(radius, segments){
-      const geom = new THREE.BufferGeometry();
-      const pts = [];
-      for(let i=0;i<segments;i++){ const a=(i/segments)*Math.PI*2; pts.push(radius*Math.cos(a),0,radius*Math.sin(a)); }
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
-      return geom;
-    }
-    function distributeElectrons(total){
-      const shells = []; let n=1, remaining=total;
-      while(remaining>0 && shells.length<7){
-        const cap = 2*n*n;
-        const take = Math.min(cap, remaining);
-        shells.push(take);
-        remaining -= take; n++;
+        return s;
       }
-      return shells;
+
+      function neighborsOfEmpty(emptyIdx){
+        const res=[];
+        const r=Math.floor(emptyIdx/size), c=emptyIdx%size;
+        const deltas=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+        for(const d of deltas){
+          const nr=r+d.dr, nc=c+d.dc;
+          if(nr>=0 && nr<size && nc>=0 && nc<size) res.push(nr*size+nc);
+        }
+        return res;
+      }
+
+      function bfsPlaceTile(currentState, fixedSet, targetVal, targetGoalIdx){
+        const start = currentState.slice();
+        const startEmpty = start.indexOf(null);
+        const key = s => s.map(x=>x===null?'_':x).join(',');
+        const Queue = [];
+        const Seen = new Set();
+        Queue.push({arr:start.slice(), empty:startEmpty, path:[]});
+        Seen.add(key(start));
+        const maxNodes = 400000;
+        let nodes=0;
+        const maxDepth = 80;
+        while(Queue.length){
+          const node = Queue.shift();
+          nodes++;
+          if(nodes > maxNodes) break;
+          if(node.arr[targetGoalIdx] === targetVal) return node.path.slice();
+          if(node.path.length >= maxDepth) continue;
+          const neigh = neighborsOfEmpty(node.empty);
+          for(const idx of neigh){
+            if(fixedSet && fixedSet.has(idx)) continue;
+            const newA = node.arr.slice();
+            const moved = newA[idx];
+            newA[node.empty] = moved;
+            newA[idx] = null;
+            const k = key(newA);
+            if(Seen.has(k)) continue;
+            Seen.add(k);
+            const newPath = node.path.slice(); newPath.push(moved);
+            Queue.push({arr:newA, empty: idx, path:newPath});
+          }
+        }
+        return null;
+      }
+
+      function idaPlaceTarget(currentState, fixedSet, targetVal, targetGoalIdx, nodeCap=600_000, tCap=10_000){
+        const state = currentState.slice();
+        let empty = state.indexOf(null);
+        let nodes=0;
+        function h(){ return manhattanUnfixed(state, fixedSet); }
+        let threshold = h();
+        const path = [];
+        let found=null;
+        function dfs(eidx, g, prev){
+          nodes++;
+          if(nodes>nodeCap) return Infinity;
+          const hv = manhattanUnfixed(state, fixedSet);
+          const f = g + hv;
+          if(f > threshold) return f;
+          if(state[targetGoalIdx] === targetVal) { found = path.slice(); return 'FOUND'; }
+          let min=Infinity;
+          const neigh = neighborsOfEmpty(eidx);
+          const order = neigh.map(idx=>{
+            if(fixedSet.has(idx)) return {idx, hv2: 1e9};
+            const val = state[idx];
+            state[eidx]=val; state[idx]=null;
+            const hv2 = manhattanUnfixed(state, fixedSet);
+            state[idx]=val; state[eidx]=null;
+            return {idx, hv2};
+          }).filter(Boolean).sort((a,b)=>a.hv2-b.hv2);
+          for(const o of order){
+            const ti = o.idx;
+            if(prev !== undefined && ti === prev) continue;
+            if(fixedSet.has(ti)) continue;
+            const v = state[ti];
+            state[eidx] = v; state[ti] = null;
+            path.push(v);
+            const r = dfs(ti, g+1, eidx);
+            if(r === 'FOUND') return 'FOUND';
+            if(r < min) min = r;
+            path.pop();
+            state[ti] = v; state[eidx] = null;
+          }
+          return min;
+        }
+        const t0 = Date.now();
+        while(true){
+          nodes=0;
+          const r = dfs(empty, 0, undefined);
+          if(r === 'FOUND') return found;
+          if(r === Infinity || nodes > nodeCap) break;
+          threshold = r;
+          if(Date.now() - t0 > tCap) break;
+        }
+        return null;
+      }
+
+      function idaFull(initial, nodeCap=5_000_000, tCap=30_000){
+        const state = initial.slice();
+        let empty = state.indexOf(null);
+        let nodes=0;
+        function h(){ return manhattanUnfixed(state, new Set()); }
+        let threshold = h();
+        const path=[];
+        let found=null;
+        function dfs(eidx, g, prev){
+          nodes++;
+          if(nodes>nodeCap) return Infinity;
+          const hv = manhattanUnfixed(state, new Set());
+          const f = g + hv;
+          if(f > threshold) return f;
+          if(hv===0){ found = path.slice(); return 'FOUND'; }
+          let min=Infinity;
+          const neigh = neighborsOfEmpty(eidx);
+          const order = neigh.map(idx=>{
+            const val = state[idx];
+            state[eidx]=val; state[idx]=null;
+            const hv2 = manhattanUnfixed(state, new Set());
+            state[idx]=val; state[eidx]=null;
+            return {idx,hv2};
+          }).sort((a,b)=>a.hv2-b.hv2);
+          for(const o of order){
+            const ti=o.idx;
+            if(prev !== undefined && ti===prev) continue;
+            const v = state[ti];
+            state[eidx]=v; state[ti]=null;
+            path.push(v);
+            const r = dfs(ti, g+1, eidx);
+            if(r==='FOUND') return 'FOUND';
+            if(r < min) min = r;
+            path.pop();
+            state[ti]=v; state[eidx]=null;
+          }
+          return min;
+        }
+        const t0 = Date.now();
+        while(true){
+          nodes=0;
+          const r = dfs(empty, 0, undefined);
+          if(r==='FOUND') return found;
+          if(r===Infinity || nodes>nodeCap) break;
+          threshold = r;
+          if(Date.now()-t0 > tCap) break;
+        }
+        return null;
+      }
+
+      // compute_tile: targeted compute for a single tile -> returns sequence of moved tile numbers
+      if(type === 'compute_tile'){
+        const working = startState.slice();
+        const targetVal = targetTile;
+        const goalIdx = targetVal - 1;
+        const fixed = new Set();
+        const moves = bfsPlaceTile(working, fixed, targetVal, goalIdx);
+        self.postMessage({type:'compute_result', target:targetVal, moves:moves});
+        return;
+      }
+
+      // full solver behavior (3x3/4x4/5x5 multi-stage) preserved
+      if(size === 4){
+        const working = startState.slice();
+        let allMoves = [];
+        const fixedIndices = new Set();
+        try{
+          for(let c=0; c<size; c++){
+            const targetVal = c+1;
+            const goalIdx = c;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 300000, 4000);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          for(let i=4;i<=5;i++){
+            const targetVal = i+1;
+            const goalIdx = i;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue; }
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 200000, 3500);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'4x4_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'4x4_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          const restMoves = idaFull(working, 600000, 16000);
+          if(restMoves&&restMoves.length>0){
+            for(const mv of restMoves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            self.postMessage({type:'done', moves:allMoves, method:'4x4_stage2_ida'});
+            return;
+          }else{
+            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'4x4_stage2_fail'});
+            return;
+          }
+        }catch(e){
+          self.postMessage({type:'done', moves:null, method:'4x4_exception', error:String(e)});
+          return;
+        }
+      }
+
+      if(size===5){
+        const st1idx=[0,1,2,3,4,5,6,7,8,9,10,11];
+        const working = startState.slice();
+        let allMoves = [];
+        const fixedIndices = new Set();
+        try{
+          for(const i of st1idx){
+            const targetVal = i+1;
+            const goalIdx = i;
+            if(working[goalIdx]===targetVal){ fixedIndices.add(goalIdx); continue;}
+            let moves = idaPlaceTarget(working, fixedIndices, targetVal, goalIdx, 170000, 3000);
+            if(!moves) moves = bfsPlaceTile(working, fixedIndices, targetVal, goalIdx);
+            if(!moves){ self.postMessage({type:'done', moves:null, method:'5x5_stage1_fail', tile:targetVal}); return; }
+            for(const mv of moves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            if(working[goalIdx]!==targetVal){ self.postMessage({type:'done', moves:null, method:'5x5_not_placed', tile:targetVal}); return;}
+            fixedIndices.add(goalIdx);
+          }
+          const restMoves = idaFull(working, 400000, 9000);
+          if(restMoves&&restMoves.length>0){
+            for(const mv of restMoves){
+              const fromIdx = working.indexOf(mv);
+              const eIdx = working.indexOf(null);
+              working[eIdx]=mv; working[fromIdx]=null;
+              allMoves.push(mv);
+            }
+            self.postMessage({type:'done', moves:allMoves, method:'5x5_stage2_ida'});
+            return;
+          }else{
+            self.postMessage({type:'done', moves:allMoves.length?allMoves:null, method:'5x5_stage2_fail'});
+            return;
+          }
+        }catch(e){
+          self.postMessage({type:'done', moves:null, method:'5x5_exception', error:String(e)});
+          return;
+        }
+      }
+
+      if(size<=3){
+        const moves = idaFull(startState);
+        self.postMessage({type:'done', moves:moves, method:'3x3_ida'});
+        return;
+      }
+
+      const fallback = idaFull(startState, 150000, 7000);
+      self.postMessage({type:'done', moves:fallback, method:'fallback_ida'});
+    }catch(e){
+      self.postMessage({type:'done', moves:null, method:'worker_crash', error: String(e)});
     }
+  };
+} // end worker function
 
-    // ====== OPEN ATOM BY SLUG ======
-    async function openAtomBySlug(slug, fromRefresh){
-      // find by slug or element-<num> or name
-      let foundNum = null, data=null;
-      for(const [numStr,v] of Object.entries(elementsCache)){ if(v && v.slug === slug){ foundNum = parseInt(numStr); data = v; break; } }
-      if(!foundNum){
-        const m = slug.match(/^element-(\d{1,3})$/);
-        if(m){ foundNum = parseInt(m[1]); data = elementsCache[foundNum] || {protons:foundNum, electrons:foundNum, neutrons:0, name:'Element '+foundNum, shortName:''}; }
+// create worker from function
+const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
+const workerUrl = URL.createObjectURL(workerBlob);
+let solverWorker = null;
+let solverRunning = false;
+let queuedMoves = [];
+
+function startSolver(){
+  if(solverRunning) return;
+  if(gameContainer.classList.contains('hidden')) return;
+  solverRunning = true;
+  solveBtn.disabled = true;
+  gridEl.style.pointerEvents = 'none';
+  const snapshot = tiles.slice();
+  solverWorker = new Worker(workerUrl);
+  solverWorker.onmessage = function(ev){
+    const data = ev.data;
+    const moves = data.moves;
+    if(!moves){
+      solveBtn.disabled = false;
+      gridEl.style.pointerEvents = '';
+      solverRunning = false;
+      let msg = 'Solver failed or timed out.';
+      if(data && data.method){
+        if(data.method.startsWith('4x4_stage1_fail')) msg="৪×৪ puzzle: ১-৬ tile stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('4x4_stage2_fail')) msg="৪×৪ puzzle: শেষ stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('5x5_stage1_fail')) msg="৫×৫ puzzle: ১ম ১২টা tile stage-এ আটকে গেছে!";
+        else if(data.method.startsWith('5x5_stage2_fail')) msg="৫×৫ puzzle: শেষ stage-এ আটকে গেছে!";
+        else msg = 'Solver could not finish (method: '+data.method+').';
       }
-      if(!foundNum){
-        for(const [numStr,v] of Object.entries(elementsCache)){ if(v && v.name && v.name.toLowerCase() === slug){ foundNum = parseInt(numStr); data=v; break; } }
+      alert(msg);
+      if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+      return;
+    }
+    applyMovesSequence(moves);
+  };
+  solverWorker.postMessage({type:'solve', state: snapshot, size});
+}
+
+function stopSolverNow(){
+  if(solverWorker){ solverWorker.terminate(); solverWorker = null; }
+  solverRunning = false;
+  solveBtn.disabled = false;
+  gridEl.style.pointerEvents = '';
+  queuedMoves = [];
+}
+
+function applyMovesSequence(moves){
+  let i = 0;
+  queuedMoves = moves;
+  const delay = 340;
+  function step(){
+    if(i >= moves.length){
+      stopSolverNow();
+      if(isSolved(tiles)) modalOverlay.style.display = 'flex';
+      updateProgressBar();
+      return;
+    }
+    const val = moves[i];
+    const tile = [...gridEl.children].find(t => +t.dataset.number === val);
+    if(tile) tryMove(tile);
+    i++;
+    updateProgressBar();
+    setTimeout(step, delay);
+  }
+  setTimeout(step, 200);
+}
+
+solveBtn.addEventListener('click', startSolver);
+window.addEventListener('keydown', (e)=>{
+  if((e.key === 'b' || e.key === 'B') && !gameContainer.classList.contains('hidden')) startSolver();
+  if(e.key === 'Escape' && solverRunning) stopSolverNow();
+});
+
+window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
+
+// Typing effect for status
+(function(){
+  const subTextEl = document.getElementById('thinking-subtext');
+  const messages = [
+    'Analyzing with Python simulation...',
+    'Evaluating heuristics...',
+    'Running Minimax algorithm...',
+    'Performing Monte-Carlo simulations...',
+    'Checking board states...',
+    'Detecting chains and loops...',
+    'Applying corner and edge heuristics...',
+    'Assessing sacrifice moves...',
+    'Generating probabilistic outcomes...',
+    'Optimizing move selection...',
+    'Calculating risk factors...',
+    'Scanning for traps...',
+    'Validating opponent\'s options...',
+    'Updating strategy matrix...',
+    'Preparing final move...',
+    'Almost done...',
+    'Move ready to execute!',
+    'বট কাজ করছে... একটু অপেক্ষা করুন!',
+    'Solver বুদ্ধি খাটাচ্ছে...',
+    'পাজেল বিশ্লেষণ হচ্ছে...'
+  ];
+  let idx = 0;
+  function typeEffect(text, element, delay=40) {
+    return new Promise((resolve) => {
+      if(!element) return resolve();
+      element.textContent = '';
+      let i = 0;
+      function typeChar() {
+        if(i < text.length) {
+          element.textContent += text.charAt(i);
+          i++;
+          setTimeout(typeChar, delay);
+        } else {
+          setTimeout(resolve, 1100);
+        }
       }
-      if(!foundNum){ routeTo('/table'); return; }
+      typeChar();
+    });
+  }
+  async function loopMessages() {
+    while(true) {
+      await typeEffect(messages[idx], subTextEl);
+      idx = (idx + 1) % messages.length;
+    }
+  }
+  loopMessages();
+})();
 
-      document.getElementById('aboutTitle').textContent = (data.name || ('Element '+foundNum));
-      document.getElementById('aboutFrame').src = data.name ? ('https://en.wikipedia.org/wiki/'+ encodeURIComponent(data.name)) : 'about:blank';
-      atomTitle.textContent = data.name || ('Element '+foundNum);
-      show('view-atom');
+// ---------------- CUSTOM COMPUTE & FIREBASE ----------------
 
-      buildAtomView({
-        protons: data.protons ?? foundNum,
-        neutrons: data.neutrons ?? 0,
-        electrons: data.electrons ?? foundNum
+// Utility state key
+function stateKey(arr){ return arr.map(v=>v===null?'_':v).join(','); }
+
+// Firebase app holders
+const firebaseApps = { a: null, b: null, c: null };
+function initFirebaseApps(){
+  try{
+    if(typeof firebase === 'undefined') return;
+    if(config1 && !firebaseApps.a){ firebaseApps.a = firebase.initializeApp(config1, 'app1'); }
+    if(config2 && !firebaseApps.b){ firebaseApps.b = firebase.initializeApp(config2, 'app2'); }
+    if(config3 && !firebaseApps.c){ firebaseApps.c = firebase.initializeApp(config3, 'app3'); }
+  }catch(e){ console.warn('Firebase init error', e); }
+}
+function getDbForTile(tile){
+  if(tile>=1 && tile<=8) return firebaseApps.a ? firebaseApps.a.database() : null;
+  if(tile>=9 && tile<=16) return firebaseApps.b ? firebaseApps.b.database() : null;
+  if(tile>=17 && tile<=24) return firebaseApps.c ? firebaseApps.c.database() : null;
+  return null;
+}
+
+// UI toggles
+setCustomBtn.addEventListener('click', ()=>{
+  customWrapper.style.display = (customWrapper.style.display === 'flex' || customWrapper.style.display === 'block')? 'none' : 'block';
+});
+computeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display = 'flex'; });
+closeInfoBtn && closeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display = 'none'; });
+computeInfoOverlay.addEventListener('click', (e)=>{ if(e.target === computeInfoOverlay) computeInfoOverlay.style.display='none'; });
+
+// show/hide compute card
+function showComputeCard(tile, posIdx, movesArray){
+  metaTile.textContent = tile;
+  metaPos.textContent = posIdx;
+  movesList.innerHTML = '';
+  if(movesArray && movesArray.length){
+    for(const m of movesArray){
+      const el = document.createElement('div'); el.className='pill'; el.textContent = m; movesList.appendChild(el);
+    }
+  } else {
+    const el = document.createElement('div'); el.style.color='#9fb3c8'; el.textContent = 'No moves found / timed out'; movesList.appendChild(el);
+  }
+  saveStatus.textContent = 'Not saved yet';
+  computeCardOverlay.style.display = 'flex';
+  document.body.classList.add('dim-background');
+}
+function hideComputeCard(){ computeCardOverlay.style.display = 'none'; document.body.classList.remove('dim-background'); }
+cardClose.addEventListener('click', hideComputeCard);
+
+// parse custom input string -> array of length size*size
+function parseCustomInput(text){
+  const parts = text.split(/[ ,;]+/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length !== size*size) return null;
+  const arr = parts.map(p=> p === '_' || p.toLowerCase()==='_' ? null : Number(p));
+  if(arr.some((v,i)=> v !== null && (typeof v !== 'number' || v<1 || v>size*size-1))) return null;
+  // uniqueness
+  const vals = arr.filter(x=>x!==null);
+  const set = new Set(vals);
+  if(set.size !== vals.length) return null;
+  return arr;
+}
+
+// Compute button handler
+computeBtn.addEventListener('click', async ()=>{
+  const txt = customInput.value.trim();
+  const parsed = parseCustomInput(txt);
+  if(!parsed){ alert('Invalid input. অনুগ্রহ করে উপরের উদাহরণের মতো 25 টোকেন দিন এবং _ ব্যবহার করে empty দিন।'); return; }
+  tiles = parsed.slice();
+  emptyIndex = tiles.indexOf(null);
+  gridEl.innerHTML = '';
+  tiles.forEach((num,i)=>{
+    if(num===null) return;
+    const tile = document.createElement('div'); tile.className='tile'; if(currentMode==='hard') tile.classList.add('hard'); tile.textContent=num; const {x,y}=getTranslate(i); tile.style.transform=`translate(${x}px,${y}px)`; tile.dataset.number=num; tile.dataset.position=i; gridEl.appendChild(tile);
+  });
+  updateProgressBar();
+
+  // detect first tile not in goal
+  let targetTile = null;
+  for(let v=1; v<=size*size-1; v++){
+    const currentIdx = tiles.indexOf(v);
+    const goalIdx = v-1;
+    if(currentIdx !== -1 && currentIdx !== goalIdx){ targetTile = v; break; }
+  }
+  if(!targetTile){ alert('পাজেলটি ইতোমধ্যে সব টাইল সঠিক অবস্থায় আছে বা টার্গেট টাইল খুঁজে পাওয়া যায়নি।'); return; }
+
+  showComputeCard(targetTile, tiles.indexOf(targetTile), []);
+  initFirebaseApps();
+
+  const w = new Worker(workerUrl);
+  w.onmessage = function(ev){
+    const d = ev.data;
+    if(d.type === 'compute_result'){
+      const moves = d.moves;
+      showComputeCard(d.target, tiles.indexOf(d.target), moves);
+      const db = getDbForTile(d.target);
+      if(!db){
+        saveStatus.textContent = 'Firebase not configured for this tile range (provide config).';
+        w.terminate();
+        return;
+      }
+      const key = stateKey(tiles);
+      const path = `tiles/${d.target}/${encodeURIComponent(key)}`;
+      const ref = db.ref(path);
+      ref.get().then(snap=>{
+        if(snap.exists()){
+          saveStatus.textContent = 'Already saved (cached).';
+        } else {
+          ref.set({ moves: moves || [], length: moves?moves.length:0, timestamp: Date.now() }).then(()=>{
+            saveStatus.textContent = 'Saved ✅';
+          }).catch(e=>{
+            saveStatus.textContent = 'Save failed: '+e.message;
+          });
+        }
+      }).catch(err=>{
+        saveStatus.textContent = 'DB check failed: '+err.message;
       });
+      w.terminate();
     }
+  };
+  w.postMessage({type:'compute_tile', state: tiles.slice(), size, targetTile});
+});
 
-    // ====== ABOUT & OWNER DOUBLECLICK BEHAVIOR (ESC/CLOSERS) ======
-    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ document.getElementById('aboutSheet').classList.remove('open'); document.getElementById('ownerModal').classList.remove('open'); }});
-    document.getElementById('aboutClose').addEventListener('click', ()=> document.getElementById('aboutSheet').classList.remove('open'));
+// Manual Save from card
+cardSave.addEventListener('click', ()=>{
+  const t = Number(metaTile.textContent);
+  if(!t || isNaN(t)){ alert('No target tile in card'); return; }
+  const db = getDbForTile(t);
+  if(!db){ alert('Firebase not configured for this tile range.'); return; }
+  const snapshot = tiles.slice();
+  const key = stateKey(snapshot);
+  const path = `tiles/${t}/${encodeURIComponent(key)}`;
+  db.ref(path).get().then(snap=>{
+    if(snap.exists()){ saveStatus.textContent = 'Already saved (cached).'; }
+    else{
+      const moves = Array.from(movesList.children).map(c=>c.textContent).filter(Boolean);
+      db.ref(path).set({ moves: moves, length: moves.length, timestamp: Date.now() }).then(()=>{ saveStatus.textContent = 'Saved ✅'; }).catch(e=>{ saveStatus.textContent = 'Save failed: '+e.message; });
+    }
+  }).catch(err=>{ saveStatus.textContent = 'DB check failed: '+err.message; });
+});
 
-    // ====== INITIAL TABLE RENDER & Router ======
-    renderTable();
-    handleRoute();
-  </script>
+// hide compute card when clicking outside
+computeCardOverlay.addEventListener('click', (e)=>{ if(e.target === computeCardOverlay) hideComputeCard(); });
+
+</script>
 </body>
-  </html>
+                                                                               </html>
