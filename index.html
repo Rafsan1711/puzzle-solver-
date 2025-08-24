@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sliding Puzzle — Solver (Stages+Progress+URL)</title>
+  <title>Sliding Puzzle — Solver (Final)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Firebase compat libs -->
@@ -30,6 +30,7 @@
     .tile:hover { background:linear-gradient(145deg,#2c5f37,#1f3f22); color:#7fffd4; box-shadow:0 10px 20px rgba(35,134,54,0.7), inset 0 3px 7px rgba(255,255,255,0.15); transform:scale(1.1) var(--translate); z-index:10; text-shadow:0 0 8px #7fffd4cc; }
     .tile.empty { background:transparent; box-shadow:none; cursor:default; pointer-events:none; }
     #grid { position:relative; width:100%; height:100%; --grid-size:3; }
+    /* modalOverlay default hidden; don't use Tailwind classes that force display */
     #modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; z-index:100; }
     #modal { background:#21262d; padding:2rem; border-radius:1rem; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.7); }
     #modal h2 { font-size:2rem; margin-bottom:1rem; color:#58a6ff; }
@@ -119,7 +120,7 @@
     <div id="progressText"></div>
   </div>
 
-  <!-- Controls below board (hidden on home) -->
+  <!-- Controls -->
   <div id="controls">
     <div class="controls-column">
       <div id="thinkingSmall" aria-hidden="true"></div>
@@ -127,6 +128,8 @@
       <div id="game-board"></div>
       <div id="thinking-container" role="status" aria-live="polite" aria-atomic="true" aria-label="Bot thinking status">
         <div id="thinking-text">Solving With Stages...</div>
+        <!-- ensure subtext element exists so typing loop won't busy-loop -->
+        <div id="thinking-subtext"></div>
       </div>
 
       <button id="solveBtn" class="btn-wide" title="Bot Solve">Solve</button>
@@ -139,12 +142,11 @@
         </div>
         <button id="computeInfoBtn" style="background:transparent;border:none;color:#9fb3c8;margin-top:8px;text-decoration:underline;">Compute ও Efficiency সম্পর্কে বিস্তারিত দেখুন</button>
       </div>
-
     </div>
   </div>
 
-  <!-- Modal -->
-  <div id="modalOverlay" class="flex">
+  <!-- Modal (hidden by default) -->
+  <div id="modalOverlay">
     <div id="modal">
       <h2>🎉 You Solved It!</h2>
       <p class="text-gray-300">Congratulations on completing the puzzle.</p>
@@ -153,7 +155,7 @@
   </div>
 
   <!-- Compute info slide-up modal -->
-  <div id="computeInfoOverlay" style="display:none; position:fixed; inset:0; z-index:140; display:flex; align-items:flex-end; justify-content:center; pointer-events:none;">
+  <div id="computeInfoOverlay">
     <div id="computeInfoPanel">
       <div id="computeInfoInner">
         <h3 style="color:#58a6ff; font-size:1.2rem; margin-bottom:6px;">Compute & Efficiency</h3>
@@ -162,7 +164,7 @@
           <li>• compute-এ node/time limits আছে — বড় search-এ ব্রাউজার freeze না করাই প্রধান উদ্দেশ্য।</li>
           <li>• Firebase-এ cached result থাকলে সেটাকে আগে দেখানো হবে — নতুন compute করার দরকার হবে না।</li>
           <li>• আপনি টাইলগুলো আলাদাভাবে 1 থেকে 24 পর্যন্ত serially compute ও save করলে পরে ওই টাইল যেই অবস্থাতেই থাকুক না কেন cached moves কাজে লাগবে।</li>
-          <li>• আপনি 1..8,9..16,17..24 টুকরা তিনটি আলাদা Firebase প্রজেক্টে রাখতে পারবেন — আপনি যে configs দিলেন সেগুলো বসানো আছে।</li>
+          <li>• আপনি 1..8,9..16,17..24 টুকরা তিনটি আলাদা Firebase প্রজেক্টে রাখতে পারবেন — configs code-এ বসানো আছে।</li>
         </ul>
         <div style="display:flex; justify-content:space-between; margin-top:12px;">
           <button id="closeInfoBtn" style="background:#16a34a; color:white; padding:8px 12px; border-radius:8px; border:none;">Close</button>
@@ -192,7 +194,7 @@
   </div>
 
 <script>
-/* ---------- User-provided 3 firebase configs inserted ---------- */
+/* ------------------ three firebase configs (user-provided) ------------------ */
 const config1 = {
   apiKey: "AIzaSyCMEqtaxOodPnwMKkrSVZrcjLMmj3oefB0",
   authDomain: "chatstudio-agent.firebaseapp.com",
@@ -203,7 +205,6 @@ const config1 = {
   appId: "1:626338448826:web:67936971701c3466d90983",
   measurementId: "G-ZHNZHMYC0B"
 };
-
 const config2 = {
   apiKey: "AIzaSyAKd2WmThKb4OM9pv0Bx9vtunmGpRGxczM",
   authDomain: "puzzle-solver-5-2.firebaseapp.com",
@@ -213,7 +214,6 @@ const config2 = {
   messagingSenderId: "221283910343",
   appId: "1:221283910343:web:0bef0b54fe26e594c8f4e2"
 };
-
 const config3 = {
   apiKey: "AIzaSyDohgyc4pRldMVxbFRTkHnNfAIczf8JHMo",
   authDomain: "puzzle-solver-4-1.firebaseapp.com",
@@ -223,11 +223,11 @@ const config3 = {
   messagingSenderId: "422133823015",
   appId: "1:422133823015:web:0daf2ce34fa8fe98eac002"
 };
-/* ------------------------------------------------------------ */
+/* --------------------------------------------------------------------------- */
 
-/* ---------- Full app logic (solver + UI + firebase use) ---------- */
+/* ---------- The main app logic (solver + UI + firebase) ---------- */
+// (This is the same solver logic you provided, kept intact where requested; fixes applied for UI bugs)
 
-// UI refs
 const modes = { easy:{size:3, path:'easy'}, normal:{size:4, path:'normal'}, hard:{size:5, path:'hard'} };
 let currentMode = 'easy';
 const homeScreen = document.getElementById('homeScreen');
@@ -407,7 +407,7 @@ function updateProgressBar(){
   if(perc===100) progressText.textContent = "🎉 Puzzle Solved!";
 }
 
-// ----------- Worker-based multi-stage hybrid solver -----------
+// Worker solver function (kept original algorithms)
 function solverWorkerFunction(){
   self.onmessage = function(ev){
     try{
@@ -577,7 +577,6 @@ function solverWorkerFunction(){
         return null;
       }
 
-      // compute_tile: targeted compute for a single tile -> returns sequence of moved tile numbers
       if(type === 'compute_tile'){
         const working = startState.slice();
         const targetVal = targetTile;
@@ -588,7 +587,7 @@ function solverWorkerFunction(){
         return;
       }
 
-      // full solver behavior (3x3/4x4/5x5 multi-stage) preserved
+      // full solver preserved
       if(size === 4){
         const working = startState.slice();
         let allMoves = [];
@@ -700,9 +699,9 @@ function solverWorkerFunction(){
       self.postMessage({type:'done', moves:null, method:'worker_crash', error: String(e)});
     }
   };
-} // end worker function
+}
 
-// create worker from function
+// create worker
 const workerBlob = new Blob(['('+solverWorkerFunction.toString()+')()'], {type:'application/javascript'});
 const workerUrl = URL.createObjectURL(workerBlob);
 let solverWorker = null;
@@ -778,7 +777,7 @@ window.addEventListener('keydown', (e)=>{
 
 window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.terminate(); });
 
-// Typing effect for status
+// Typing effect - fixed to avoid busy-loop if element missing
 (function(){
   const subTextEl = document.getElementById('thinking-subtext');
   const messages = [
@@ -804,22 +803,19 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
     'পাজেল বিশ্লেষণ হচ্ছে...'
   ];
   let idx = 0;
-  function typeEffect(text, element, delay=40) {
-    return new Promise((resolve) => {
-      if(!element) return resolve();
-      element.textContent = '';
-      let i = 0;
-      function typeChar() {
-        if(i < text.length) {
-          element.textContent += text.charAt(i);
-          i++;
-          setTimeout(typeChar, delay);
-        } else {
-          setTimeout(resolve, 1100);
-        }
-      }
-      typeChar();
-    });
+  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+  async function typeEffect(text, element, delay=40) {
+    if(!element){
+      // element missing — wait a bit to avoid busy-loop
+      await wait(900);
+      return;
+    }
+    element.textContent = '';
+    for(let i=0;i<text.length;i++){
+      element.textContent += text.charAt(i);
+      await wait(delay);
+    }
+    await wait(900);
   }
   async function loopMessages() {
     while(true) {
@@ -831,11 +827,8 @@ window.addEventListener('beforeunload', ()=>{ if(solverWorker) solverWorker.term
 })();
 
 // ---------------- CUSTOM COMPUTE & FIREBASE ----------------
-
-// Utility state key
 function stateKey(arr){ return arr.map(v=>v===null?'_':v).join(','); }
 
-// Firebase app holders
 const firebaseApps = { a: null, b: null, c: null };
 function initFirebaseApps(){
   try{
@@ -852,7 +845,6 @@ function getDbForTile(tile){
   return null;
 }
 
-// UI toggles
 setCustomBtn.addEventListener('click', ()=>{
   customWrapper.style.display = (customWrapper.style.display === 'flex' || customWrapper.style.display === 'block')? 'none' : 'block';
 });
@@ -860,7 +852,6 @@ computeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display 
 closeInfoBtn && closeInfoBtn.addEventListener('click', ()=>{ computeInfoOverlay.style.display = 'none'; });
 computeInfoOverlay.addEventListener('click', (e)=>{ if(e.target === computeInfoOverlay) computeInfoOverlay.style.display='none'; });
 
-// show/hide compute card
 function showComputeCard(tile, posIdx, movesArray){
   metaTile.textContent = tile;
   metaPos.textContent = posIdx;
@@ -879,20 +870,17 @@ function showComputeCard(tile, posIdx, movesArray){
 function hideComputeCard(){ computeCardOverlay.style.display = 'none'; document.body.classList.remove('dim-background'); }
 cardClose.addEventListener('click', hideComputeCard);
 
-// parse custom input string -> array of length size*size
 function parseCustomInput(text){
   const parts = text.split(/[ ,;]+/).map(x=>x.trim()).filter(Boolean);
   if(parts.length !== size*size) return null;
   const arr = parts.map(p=> p === '_' || p.toLowerCase()==='_' ? null : Number(p));
   if(arr.some((v,i)=> v !== null && (typeof v !== 'number' || v<1 || v>size*size-1))) return null;
-  // uniqueness
   const vals = arr.filter(x=>x!==null);
   const set = new Set(vals);
   if(set.size !== vals.length) return null;
   return arr;
 }
 
-// Compute button handler
 computeBtn.addEventListener('click', async ()=>{
   const txt = customInput.value.trim();
   const parsed = parseCustomInput(txt);
@@ -906,7 +894,6 @@ computeBtn.addEventListener('click', async ()=>{
   });
   updateProgressBar();
 
-  // detect first tile not in goal
   let targetTile = null;
   for(let v=1; v<=size*size-1; v++){
     const currentIdx = tiles.indexOf(v);
@@ -952,7 +939,6 @@ computeBtn.addEventListener('click', async ()=>{
   w.postMessage({type:'compute_tile', state: tiles.slice(), size, targetTile});
 });
 
-// Manual Save from card
 cardSave.addEventListener('click', ()=>{
   const t = Number(metaTile.textContent);
   if(!t || isNaN(t)){ alert('No target tile in card'); return; }
@@ -970,9 +956,8 @@ cardSave.addEventListener('click', ()=>{
   }).catch(err=>{ saveStatus.textContent = 'DB check failed: '+err.message; });
 });
 
-// hide compute card when clicking outside
 computeCardOverlay.addEventListener('click', (e)=>{ if(e.target === computeCardOverlay) hideComputeCard(); });
 
 </script>
 </body>
-                                                                               </html>
+</html>
